@@ -30,7 +30,7 @@
 
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
 int zend_optimizer_add_literal(zend_op_array *op_array, const zval *zv TSRMLS_DC)
-{
+{ENTER(zend_optimizer_add_literal)
 	int i = op_array->last_literal;
 	op_array->last_literal++;
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO

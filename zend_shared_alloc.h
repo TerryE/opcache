@@ -91,6 +91,7 @@ typedef struct _handler_entry {
 
 typedef struct _zend_shared_memory_block_header {
 	int size;
+    int dummy;
 } zend_shared_memory_block_header;
 
 typedef struct _zend_shared_memory_state {
@@ -182,6 +183,12 @@ extern zend_shared_memory_handlers zend_alloc_win32_handlers;
 void zend_shared_alloc_create_lock(void);
 void zend_shared_alloc_lock_win32(void);
 void zend_shared_alloc_unlock_win32(void);
+#endif
+
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+extern int zend_shared_load_sma(zend_shared_segment *shared_segment);
+extern int zend_shared_save_sma(zend_shared_segment *shared_segment);
+extern void zend_accel_clear_saved_sma(void);
 #endif
 
 #endif /* ZEND_SHARED_ALLOC_H */

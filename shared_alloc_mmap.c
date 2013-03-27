@@ -28,13 +28,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include "SAPI.h"
 
 #if defined(MAP_ANON) && !defined(MAP_ANONYMOUS)
 # define MAP_ANONYMOUS MAP_ANON
 #endif
 
 static int create_segments(size_t requested_size, zend_shared_segment ***shared_segments_p, int *shared_segments_count, char **error_in)
-{
+{ENTER(create_segments-mmap)
 	zend_shared_segment *shared_segment;
 
 	*shared_segments_count = 1;
@@ -55,17 +56,25 @@ static int create_segments(size_t requested_size, zend_shared_segment ***shared_
 	shared_segment->pos = 0;
 	shared_segment->size = requested_size;
 
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+    /* In the case of the CLI SAPI, the SMA can be "reattached" to a previous dump if it exists */
+    if (strcmp(sapi_module.name, "cli") == 0) {
+    	TSRMLS_FETCH();
+        DEBUG2(LOAD, "LOAD: SMA mapped at %p, size %u", shared_segment->p, (uint) shared_segment->size); 
+        return zend_accel_load_sma(shared_segment);
+    }
+#endif
 	return ALLOC_SUCCESS;
 }
 
 static int detach_segment(zend_shared_segment *shared_segment)
-{
+{ENTER(detach_segment-mmap)
 	munmap(shared_segment->p, shared_segment->size);
 	return 0;
 }
 
 static size_t segment_type_size(void)
-{
+{ENTER(segment_type_size-mmap)
 	return sizeof(zend_shared_segment);
 }
 

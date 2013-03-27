@@ -54,7 +54,7 @@ static zend_function_entry accel_functions[] = {
 };
 
 static ZEND_INI_MH(OnUpdateMemoryConsumption)
-{
+{ENTER(ZEND_INI_MH_OnUpdateMemoryConsumption)
 	long *p;
 	long memsize;
 #ifndef ZTS
@@ -92,7 +92,7 @@ static ZEND_INI_MH(OnUpdateMemoryConsumption)
 }
 
 static ZEND_INI_MH(OnUpdateMaxAcceleratedFiles)
-{
+{ENTER(ZEND_INI_MH_OnUpdateMaxAcceleratedFiles)
 	long *p;
 	long size;
 #ifndef ZTS
@@ -138,7 +138,7 @@ static ZEND_INI_MH(OnUpdateMaxAcceleratedFiles)
 }
 
 static ZEND_INI_MH(OnUpdateMaxWastedPercentage)
-{
+{ENTER(ZEND_INI_MH_OnUpdateMaxWastedPercentage)
 	double *p;
 	long percentage;
 #ifndef ZTS
@@ -174,7 +174,7 @@ static ZEND_INI_MH(OnUpdateMaxWastedPercentage)
 }
 
 static ZEND_INI_MH(OnUpdateAccelBlacklist)
-{
+{ENTER(ZEND_INI_MH_OnUpdateAccelBlacklist)
 	char **p;
 #ifndef ZTS
 	char *base = (char *) mh_arg2;
@@ -232,6 +232,14 @@ ZEND_INI_BEGIN()
 
 #ifdef ZEND_WIN32
 	STD_PHP_INI_ENTRY("zend_optimizerplus.mmap_base", NULL, PHP_INI_SYSTEM,	OnUpdateString,	                             accel_directives.mmap_base,                 zend_accel_globals, accel_globals)
+#endif
+#ifdef ACCEL_DEBUG
+	STD_PHP_INI_ENTRY("zend_optimizerplus.debug_flags", "0"   , PHP_INI_SYSTEM, OnUpdateLong, 
+accel_directives.debug_flags,               zend_accel_globals, accel_globals)
+#endif
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+	STD_PHP_INI_ENTRY("zend_optimizerplus.cache_pattern", NULL, PHP_INI_PERDIR,	OnUpdateString,	                             accel_directives.cache_pattern,                 zend_accel_globals, accel_globals)
+	STD_PHP_INI_ENTRY("zend_optimizerplus.cache_replacement", NULL, PHP_INI_PERDIR,	OnUpdateString,	                             accel_directives.cache_replacement,                 zend_accel_globals, accel_globals)
 #endif
 ZEND_INI_END()
 
@@ -519,7 +527,7 @@ static int add_blacklist_path(zend_blacklist_entry *p, zval *return_value TSRMLS
 	return 0;
 }
 
-/* {{{ proto array accelerator_get_configuration()
+/* {ENTER(ZF_accelerator_get_configuration){{ proto array accelerator_get_configuration()
    Obtain configuration information for the Zend Performance Suite */
 static ZEND_FUNCTION(accelerator_get_configuration)
 {

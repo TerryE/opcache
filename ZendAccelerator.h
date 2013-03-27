@@ -155,6 +155,10 @@ extern int lock_file;
 	#define FREE_ALLOCA(x)	free_alloca(x, use_heap)
 #endif
 
+#ifdef __ACCEL_CLI_PERSISTANCE__
+#define OPTIMIZER_PLUS_CLI_PERSISTANCE
+#endif
+
 
 #if ZEND_WIN32
 typedef unsigned __int64 accel_time_t;
@@ -223,6 +227,13 @@ typedef struct _zend_accel_directives {
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
 	long           interned_strings_buffer;
 #endif
+#ifdef ACCEL_DEBUG
+    uint           debug_flags;       /* TE addition */
+#endif
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+    char          *cache_pattern;     /* TE addition */
+    char          *cache_replacement; /* TE addition */
+#endif
 } zend_accel_directives;
 
 typedef struct _zend_accel_globals {
@@ -250,6 +261,10 @@ typedef struct _zend_accel_globals {
 	/* preallocated buffer for keys */
 	int                     key_len;
 	char                    key[MAXPATHLEN * 8];
+    char                   *cache_path;
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+    int                     new_sma_alloc_count;
+#endif
 } zend_accel_globals;
 
 typedef struct _zend_accel_shared_globals {

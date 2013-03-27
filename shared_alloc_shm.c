@@ -52,7 +52,7 @@ typedef struct  {
 } zend_shared_segment_shm;
 
 static int create_segments(size_t requested_size, zend_shared_segment_shm ***shared_segments_p, int *shared_segments_count, char **error_in)
-{
+{ENTER(create_segments-shm)
 	int i;
 	unsigned int allocate_size = 0, remaining_bytes = requested_size, seg_allocate_size;
 	int first_segment_id = -1;
@@ -126,13 +126,13 @@ static int create_segments(size_t requested_size, zend_shared_segment_shm ***sha
 }
 
 static int detach_segment(zend_shared_segment_shm *shared_segment)
-{
+{ENTER(detach_segment-shm)
 	shmdt(shared_segment->common.p);
 	return 0;
 }
 
 static size_t segment_type_size(void)
-{
+{ENTER(segment_type_size-shm)
 	return sizeof(zend_shared_segment_shm);
 }
 

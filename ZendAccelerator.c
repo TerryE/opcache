@@ -102,6 +102,7 @@ zend_bool accel_startup_ok = 0;
 static char *zps_failure_reason = NULL;
 char *zps_api_failure_reason = NULL;
 
+static int accel_deferred_startup(TSRMLS_D);
 static zend_op_array *(*accelerator_orig_compile_file)(zend_file_handle *file_handle, int type TSRMLS_DC);
 static int (*accelerator_orig_zend_stream_open_function)(const char *filename, zend_file_handle *handle  TSRMLS_DC);
 #if ZEND_EXTENSION_API_NO >= PHP_5_3_X_API_NO
@@ -118,7 +119,7 @@ static ZEND_INI_MH((*orig_include_path_on_modify)) = NULL;
 
 #ifdef ZEND_WIN32
 static time_t zend_accel_get_time(void)
-{
+{ENTER(zend_accel_get_time)
 	FILETIME now;
 	GetSystemTimeAsFileTime(&now);
 
@@ -129,7 +130,7 @@ static time_t zend_accel_get_time(void)
 #endif
 
 static inline int is_stream_path(const char *filename)
-{
+{ENTER(is_stream_path)
 	const char *p;
 
 	for (p = filename; isalnum((int)*p) || *p == '+' || *p == '-' || *p == '.'; p++);
@@ -141,7 +142,7 @@ static inline int is_stream_path(const char *filename)
  * avoid getcwd() call.
  */
 static ZEND_FUNCTION(accel_chdir)
-{
+{ENTER(ZF_accel_chdir)
 	char cwd[MAXPATHLEN];
 
 	orig_chdir(INTERNAL_FUNCTION_PARAM_PASSTHRU);
@@ -160,7 +161,7 @@ static ZEND_FUNCTION(accel_chdir)
 }
 
 static inline char* accel_getcwd(int *cwd_len TSRMLS_DC)
-{
+{ENTER(accel_getcwd)
 	if (ZCG(cwd)) {
 		*cwd_len = ZCG(cwd_len);
 		return ZCG(cwd);
@@ -182,7 +183,7 @@ static inline char* accel_getcwd(int *cwd_len TSRMLS_DC)
  * ZCG(include_path_key).
  */
 static ZEND_INI_MH(accel_include_path_on_modify)
-{
+{ENTER(ZEND_INI_MH_accel_include_path_on_modify)
 	int ret = orig_include_path_on_modify(entry, new_value, new_value_length, mh_arg1, mh_arg2, mh_arg3, stage TSRMLS_CC);
 
 	ZCG(include_path_key) = NULL;
@@ -238,21 +239,21 @@ static void (*orig_interned_strings_restore)(TSRMLS_D);
  * Such interned strings are shared across all PHP processes
  */
 static const char *accel_new_interned_string_for_php(const char *str, int len, int free_src TSRMLS_DC)
-{
+{ENTER(accel_new_interned_string_for_php)
 	return str;
 }
 
 static void accel_interned_strings_snapshot_for_php(TSRMLS_D)
-{
+{ENTER(accel_interned_strings_snapshot_for_php)
 }
 
 static void accel_interned_strings_restore_for_php(TSRMLS_D)
-{
+{ENTER(accel_interned_strings_restore_for_php)
 }
 
 #ifndef ZTS
 static void accel_interned_strings_restore_state(TSRMLS_D)
-{
+{ENTER(accel_interned_strings_restore_state)
 	unsigned int i;
 
 	for (i = 0; i < ZCSG(interned_strings).nTableSize; i++) {
@@ -273,7 +274,7 @@ static void accel_interned_strings_restore_state(TSRMLS_D)
 }
 
 static void accel_interned_strings_save_state(TSRMLS_D)
-{
+{ENTER(accel_interned_strings_save_state)
 	ZCSG(interned_strings_saved_state).arBuckets = (Bucket**)zend_shared_alloc(ZCSG(interned_strings).nTableSize * sizeof(Bucket *));
 	if (!ZCSG(interned_strings_saved_state).arBuckets) {
 		zend_accel_error(ACCEL_LOG_FATAL, "Insufficient shared memory!");
@@ -286,7 +287,7 @@ static void accel_interned_strings_save_state(TSRMLS_D)
 #endif
 
 const char *accel_new_interned_string(const char *arKey, int nKeyLength, int free_src TSRMLS_DC)
-{
+{ENTER(accel_new_interned_string)
 /* for now interned strings are supported only for non-ZTS build */
 #ifndef ZTS
 	ulong h;
@@ -364,7 +365,7 @@ const char *accel_new_interned_string(const char *arKey, int nKeyLength, int fre
 #ifndef ZTS
 /* Copy PHP interned strings from PHP process memory into the shared memory */
 static void accel_use_shm_interned_strings(TSRMLS_D)
-{
+{ENTER(accel_use_shm_interned_strings)
 	Bucket *p, *q;
 
 	/* function table hash keys */
@@ -448,7 +449,7 @@ static void accel_use_shm_interned_strings(TSRMLS_D)
 #endif
 
 static inline void accel_restart_enter(TSRMLS_D)
-{
+{ENTER(accel_restart_enter)
 #ifdef ZEND_WIN32
 	INCREMENT(restart_in);
 #else
@@ -462,7 +463,7 @@ static inline void accel_restart_enter(TSRMLS_D)
 }
 
 static inline void accel_restart_leave(TSRMLS_D)
-{
+{ENTER(accel_restart_leave)
 #ifdef ZEND_WIN32
 	ZCSG(restart_in_progress) = 0;
 	DECREMENT(restart_in);
@@ -477,7 +478,7 @@ static inline void accel_restart_leave(TSRMLS_D)
 }
 
 static inline int accel_restart_is_active(TSRMLS_D)
-{
+{ENTER(accel_restart_is_active)
 	if (ZCSG(restart_in_progress)) {
 #ifndef ZEND_WIN32
 		FLOCK_STRUCTURE(restart_check, F_WRLCK, SEEK_SET, 2, 1);
@@ -501,7 +502,7 @@ static inline int accel_restart_is_active(TSRMLS_D)
 
 /* Creates a read lock for SHM access */
 static inline void accel_activate_add(TSRMLS_D)
-{
+{ENTER(accel_activate_add)
 #ifdef ZEND_WIN32
 	INCREMENT(mem_usage);
 #else
@@ -515,7 +516,7 @@ static inline void accel_activate_add(TSRMLS_D)
 
 /* Releases a lock for SHM access */
 static inline void accel_deactivate_sub(TSRMLS_D)
-{
+{ENTER(accel_deactivate_sub)
 #ifdef ZEND_WIN32
 	if (ZCG(counted)) {
 		DECREMENT(mem_usage);
@@ -531,7 +532,7 @@ static inline void accel_deactivate_sub(TSRMLS_D)
 }
 
 static inline void accel_unlock_all(TSRMLS_D)
-{
+{ENTER(accel_unlock_all)
 #ifdef ZEND_WIN32
 	accel_deactivate_sub(TSRMLS_C);
 #else
@@ -545,7 +546,7 @@ static inline void accel_unlock_all(TSRMLS_D)
 
 #ifndef ZEND_WIN32
 static inline void kill_all_lockers(struct flock *mem_usage_check)
-{
+{ENTER(kill_all_lockers)
 	int tries = 10;
 
 	/* so that other process won't try to force while we are busy cleaning up */
@@ -587,7 +588,7 @@ static inline void kill_all_lockers(struct flock *mem_usage_check)
 #endif
 
 static inline int accel_is_inactive(TSRMLS_D)
-{
+{ENTER(accel_is_inactive)
 #ifdef ZEND_WIN32
 	if (LOCKVAL(mem_usage) == 0) {
 		return SUCCESS;
@@ -618,7 +619,7 @@ static inline int accel_is_inactive(TSRMLS_D)
 }
 
 static int zend_get_stream_timestamp(const char *filename, struct stat *statbuf TSRMLS_DC)
-{
+{ENTER(zend_get_stream_timestamp)
 	php_stream_wrapper *wrapper;
 	php_stream_statbuf stream_statbuf;
 	int ret, er;
@@ -655,7 +656,7 @@ static int zend_get_stream_timestamp(const char *filename, struct stat *statbuf 
 
 #if ZEND_WIN32
 static accel_time_t zend_get_file_handle_timestamp_win(zend_file_handle *file_handle, size_t *size)
-{
+{ENTER(zend_get_file_handle_timestamp_win)
 	static unsigned __int64 utc_base = 0;
 	static FILETIME utc_base_ft;
 	WIN32_FILE_ATTRIBUTE_DATA fdata;
@@ -699,7 +700,7 @@ static accel_time_t zend_get_file_handle_timestamp_win(zend_file_handle *file_ha
 #endif
 
 static accel_time_t zend_get_file_handle_timestamp(zend_file_handle *file_handle, size_t *size TSRMLS_DC)
-{
+{ENTER(zend_get_file_handle_timestamp)
 	struct stat statbuf;
 #ifdef ZEND_WIN32
 	accel_time_t res;
@@ -801,7 +802,7 @@ static accel_time_t zend_get_file_handle_timestamp(zend_file_handle *file_handle
 }
 
 static inline int do_validate_timestamps(zend_persistent_script *persistent_script, zend_file_handle *file_handle TSRMLS_DC)
-{
+{ENTER(do_validate_timestamps)
 	zend_file_handle ps_handle;
 	char actualpath [MAXPATHLEN + 1];
 	char *full_path_ptr = NULL;
@@ -851,14 +852,14 @@ static inline int do_validate_timestamps(zend_persistent_script *persistent_scri
 }
 
 static void zend_accel_schedule_restart_if_necessary(TSRMLS_D)
-{
+{ENTER(zend_accel_schedule_restart_if_necessary)
 	if ((((double) ZSMMG(wasted_shared_memory)) / ZCG(accel_directives).memory_consumption) >= ZCG(accel_directives).max_wasted_percentage) {
  		zend_accel_schedule_restart(TSRMLS_C);
 	}
 }
 
 static inline int validate_timestamp_and_record(zend_persistent_script *persistent_script, zend_file_handle *file_handle TSRMLS_DC)
-{
+{ENTER(validate_timestamp_and_record)
 	if (ZCG(accel_directives).revalidate_freq &&
 	    (persistent_script->dynamic_members.revalidate >= ZCSG(revalidate_at))) {
 		return SUCCESS;
@@ -871,7 +872,7 @@ static inline int validate_timestamp_and_record(zend_persistent_script *persiste
 }
 
 static unsigned int zend_accel_script_checksum(zend_persistent_script *persistent_script)
-{
+{ENTER(zend_accel_script_checksum)
 	signed char *mem = (signed char*)persistent_script->mem;
 	size_t size = persistent_script->size;
 	size_t persistent_script_check_block_size = ((char *)&(persistent_script->dynamic_members)) - (char *)persistent_script;
@@ -897,7 +898,7 @@ static unsigned int zend_accel_script_checksum(zend_persistent_script *persisten
  * we create a key that consist from requested file name, current working
  * directory, current include_path, etc */
 char *accel_make_persistent_key_ex(zend_file_handle *file_handle, int path_length, int *key_len TSRMLS_DC)
-{
+{ENTER(accel_make_persistent_key_ex)
     int key_length;
 
     /* CWD and include_path don't matter for absolute file names and streams */
@@ -1020,13 +1021,13 @@ char *accel_make_persistent_key_ex(zend_file_handle *file_handle, int path_lengt
 }
 
 static inline char *accel_make_persistent_key(zend_file_handle *file_handle, int *key_len TSRMLS_DC)
-{
+{ENTER(accel_make_persistent_key)
 	return accel_make_persistent_key_ex(file_handle, strlen(file_handle->filename), key_len TSRMLS_CC);
 }
 
 /* Adds another key for existing cached script */
 static void zend_accel_add_key(char *key, unsigned int key_length, zend_accel_hash_entry *bucket TSRMLS_DC)
-{
+{ENTER(zend_accel_add_key)
 	if (!zend_accel_hash_find(&ZCSG(hash), key, key_length + 1)) {
 		if (zend_accel_hash_is_full(&ZCSG(hash))) {
 			zend_accel_error(ACCEL_LOG_DEBUG, "No more entries in hash table!");
@@ -1045,7 +1046,7 @@ static void zend_accel_add_key(char *key, unsigned int key_length, zend_accel_ha
 }
 
 static zend_persistent_script *cache_script_in_shared_memory(zend_persistent_script *new_persistent_script, char *key, unsigned int key_length, int *from_shared_memory TSRMLS_DC)
-{
+{ENTER(cache_script_in_shared_memory)
 	zend_accel_hash_entry *bucket;
 	uint memory_used;
 
@@ -1151,7 +1152,7 @@ static const struct jit_auto_global_info
 };
 
 static int zend_accel_get_auto_globals(TSRMLS_D)
-{
+{ENTER(zend_accel_get_auto_globals)
 	int i, ag_size = (sizeof(jit_auto_globals_info) / sizeof(jit_auto_globals_info[0]));
 	int n = 1;
 	zval **res;
@@ -1167,7 +1168,7 @@ static int zend_accel_get_auto_globals(TSRMLS_D)
 }
 
 static void zend_accel_set_auto_globals(int mask TSRMLS_DC)
-{
+{ENTER(zend_accel_set_auto_globals)
 	int i, ag_size = (sizeof(jit_auto_globals_info) / sizeof(jit_auto_globals_info[0]));
 	int n = 1;
 
@@ -1180,7 +1181,7 @@ static void zend_accel_set_auto_globals(int mask TSRMLS_DC)
 }
 
 static zend_persistent_script *compile_and_cache_file(zend_file_handle *file_handle, int type, char *key, unsigned int key_length, zend_op_array **op_array_p, int *from_shared_memory TSRMLS_DC)
-{
+{ENTER(compile_and_cache_file)
 	zend_persistent_script *new_persistent_script;
 	zend_op_array *orig_active_op_array;
 	HashTable *orig_function_table, *orig_class_table;
@@ -1347,7 +1348,7 @@ static zend_persistent_script *compile_and_cache_file(zend_file_handle *file_han
 
 /* zend_compile() replacement */
 static zend_op_array *persistent_compile_file(zend_file_handle *file_handle, int type TSRMLS_DC)
-{
+{ENTER(persistent_compile_file)
 	zend_persistent_script *persistent_script = NULL;
 	char *key = NULL;
 	int key_length;
@@ -1552,7 +1553,7 @@ static zend_op_array *persistent_compile_file(zend_file_handle *file_handle, int
 
 /* Taken from php-5.2.5 because early versions don't have correct version */
 static char *accel_tsrm_realpath(const char *path, int path_len TSRMLS_DC)
-{
+{ENTER(accel_tsrm_realpath)
 	cwd_state new_state;
 	char *real_path;
 	char *cwd;
@@ -1603,7 +1604,7 @@ static char *accel_tsrm_realpath(const char *path, int path_len TSRMLS_DC)
 }
 
 static char *accel_php_resolve_path(const char *filename, int filename_length, const char *path TSRMLS_DC)
-{
+{ENTER(accel_php_resolve_path)
 	char *resolved_path;
 	char trypath[MAXPATHLEN];
 	const char *ptr, *end;
@@ -1659,7 +1660,7 @@ static char *accel_php_resolve_path(const char *filename, int filename_length, c
 
 /* zend_stream_open_function() replacement for PHP 5.2 */
 static int persistent_stream_open_function(const char *filename, zend_file_handle *handle TSRMLS_DC)
-{
+{ENTER(persistent_stream_open_function)
 	if (ZCG(enabled) && accel_startup_ok &&
 	    (ZCG(counted) || ZCSG(accelerator_enabled)) &&
 	    !CG(interactive) &&
@@ -1755,7 +1756,7 @@ static int persistent_stream_open_function(const char *filename, zend_file_handl
 
 /* zend_stream_open_function() replacement for PHP 5.3 and above */
 static int persistent_stream_open_function(const char *filename, zend_file_handle *handle TSRMLS_DC)
-{
+{ENTER(persistent_stream_open_function)
 	if (ZCG(enabled) && accel_startup_ok &&
 	    (ZCG(counted) || ZCSG(accelerator_enabled)) &&
 	    !CG(interactive) &&
@@ -1820,7 +1821,7 @@ static int persistent_stream_open_function(const char *filename, zend_file_handl
 
 /* zend_resolve_path() replacement for PHP 5.3 and above */
 static char* persistent_zend_resolve_path(const char *filename, int filename_len TSRMLS_DC)
-{
+{ENTER(persistent_zend_resolve_path)
 	if (ZCG(enabled) && accel_startup_ok &&
 	    (ZCG(counted) || ZCSG(accelerator_enabled)) &&
 	    !CG(interactive) &&
@@ -1913,7 +1914,7 @@ static char* persistent_zend_resolve_path(const char *filename, int filename_len
 #endif
 
 static void zend_reset_cache_vars(TSRMLS_D)
-{
+{ENTER(zend_reset_cache_vars)
 	ZSMMG(memory_exhausted) = 0;
 	ZCSG(hits) = 0;
 	ZCSG(misses) = 0;
@@ -1924,10 +1925,21 @@ static void zend_reset_cache_vars(TSRMLS_D)
 }
 
 static void accel_activate(void)
-{
+{ENTER(accel_activate)
 	TSRMLS_FETCH();
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+    /* In the case of the CLI SAPI no forking of the PHP process takes place and hence the bulk of
+       accel_startup functionality can be safely deferred to request activation.  By doing this, the 
+       SG(request_info) and other PHP servces are available to the remaining startup code. */
+    if (ZCG(enabled) && !smm_shared_globals && strcmp(sapi_module.name, "cli") == 0) {
+        accel_deferred_startup(TSRMLS_C);
+        if(!accel_startup_ok) {
+            ZCG(enabled) = 0;
+        }
+    }
+#endif
 
-	if (!ZCG(enabled) || !accel_startup_ok) {
+	if (!ZCG(enabled)|| !accel_startup_ok) {
 		return;
 	}
 
@@ -2007,7 +2019,7 @@ static void accel_activate(void)
  */
 
 static void accel_fast_hash_destroy(HashTable *ht)
-{
+{ENTER(accel_fast_hash_destroy)
 	Bucket *p = ht->pListHead;
 
 	while (p != NULL) {
@@ -2017,7 +2029,7 @@ static void accel_fast_hash_destroy(HashTable *ht)
 }
 
 static void accel_fast_zval_ptr_dtor(zval **zval_ptr)
-{
+{ENTER(accel_fast_zval_ptr_dtor)
 	zval *zvalue = *zval_ptr;
 
 	if (Z_DELREF_P(zvalue) == 0) {
@@ -2065,7 +2077,7 @@ static void accel_fast_zval_ptr_dtor(zval **zval_ptr)
 }
 
 static int accel_clean_non_persistent_function(zend_function *function TSRMLS_DC)
-{
+{ENTER(accel_clean_non_persistent_function)
 	if (function->type == ZEND_INTERNAL_FUNCTION) {
 		return ZEND_HASH_APPLY_STOP;
 	} else {
@@ -2081,7 +2093,7 @@ static int accel_clean_non_persistent_function(zend_function *function TSRMLS_DC
 }
 
 static int accel_cleanup_function_data(zend_function *function TSRMLS_DC)
-{
+{ENTER(accel_cleanup_function_data)
 	if (function->type == ZEND_USER_FUNCTION) {
 		if (function->op_array.static_variables) {
 			function->op_array.static_variables->pDestructor = (dtor_func_t)accel_fast_zval_ptr_dtor;
@@ -2093,7 +2105,7 @@ static int accel_cleanup_function_data(zend_function *function TSRMLS_DC)
 }
 
 static int accel_clean_non_persistent_class(zend_class_entry **pce TSRMLS_DC)
-{
+{ENTER(accel_clean_non_persistent_class)
 	zend_class_entry *ce = *pce;
 
 	if (ce->type == ZEND_INTERNAL_CLASS) {
@@ -2127,7 +2139,7 @@ static int accel_clean_non_persistent_class(zend_class_entry **pce TSRMLS_DC)
 }
 
 static int accel_clean_non_persistent_constant(zend_constant *c TSRMLS_DC)
-{
+{ENTER(accel_clean_non_persistent_constant)
 	if (c->flags & CONST_PERSISTENT) {
 		return ZEND_HASH_APPLY_STOP;
 	} else {
@@ -2137,7 +2149,7 @@ static int accel_clean_non_persistent_constant(zend_constant *c TSRMLS_DC)
 }
 
 static void zend_accel_fast_shutdown(TSRMLS_D)
-{
+{ENTER(zend_accel_fast_shutdown)
 	if (EG(full_tables_cleanup)) {
 		EG(symbol_table).pDestructor = (dtor_func_t)accel_fast_zval_ptr_dtor;
 	} else {
@@ -2172,7 +2184,7 @@ static void zend_accel_fast_shutdown(TSRMLS_D)
 #endif
 
 static void accel_deactivate(void)
-{
+{ENTER(accel_deactivate)
 	/* ensure that we restore function_table and class_table
 	 * In general, they're restored by persistent_compile_file(), but in case
 	 * the script is aborted abnormally, they may become messed up.
@@ -2182,7 +2194,18 @@ static void accel_deactivate(void)
 	if (!ZCG(enabled) || !accel_startup_ok) {
 		return;
 	}
-
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+    /* In the case of the CLI SAPI no forking of the PHP process takes place and accel_deactivate 
+       occurs immediately before accel_shutdown.  However, by moving the SMA save to here, all the
+       normal PHP services are still available which makes coding the save a lot easier. */
+    if (strcmp(sapi_module.name, "cli") == 0) {
+        if (ZSMMG(wasted_shared_memory) > 0) {
+            zend_accel_clear_saved_sma();
+        } else if (ZCG(new_sma_alloc_count) > 0) {
+            (void) zend_accel_save_sma(ZSMMG(shared_segments)[0]);
+        }
+    }
+#endif
 	zend_shared_alloc_safe_unlock(TSRMLS_C); /* be sure we didn't leave cache locked */
 	accel_unlock_all(TSRMLS_C);
 	ZCG(counted) = 0;
@@ -2201,7 +2224,7 @@ static void accel_deactivate(void)
 }
 
 static int accelerator_remove_cb(zend_extension *element1, zend_extension *element2)
-{
+{ENTER(accelerator_remove_cb)
 	(void)element2; /* keep the compiler happy */
 
 	if (!strcmp(element1->name, ACCELERATOR_PRODUCT_NAME )) {
@@ -2224,7 +2247,7 @@ static int accelerator_remove_cb(zend_extension *element1, zend_extension *eleme
 }
 
 static void zps_startup_failure(char *reason, char *api_reason, int (*cb)(zend_extension *, zend_extension *) TSRMLS_DC)
-{
+{ENTER(zps_startup_failure)
 	accel_startup_ok = 0;
 	zps_failure_reason = reason;
 	zps_api_failure_reason = api_reason?api_reason:reason;
@@ -2232,7 +2255,7 @@ static void zps_startup_failure(char *reason, char *api_reason, int (*cb)(zend_e
 }
 
 static inline int accel_find_sapi(TSRMLS_D)
-{
+{ENTER(accel_find_sapi)
 	static const char *supported_sapis[] = {
 		"apache",
 		"fastcgi",
@@ -2262,7 +2285,7 @@ static inline int accel_find_sapi(TSRMLS_D)
 }
 
 static void zend_accel_init_shm(TSRMLS_D)
-{
+{ENTER(zend_accel_init_shm)
 	zend_shared_alloc_lock(TSRMLS_C);
 
 	accel_shared_globals = zend_shared_alloc(sizeof(zend_accel_shared_globals));
@@ -2320,20 +2343,23 @@ static void zend_accel_init_shm(TSRMLS_D)
 }
 
 static void accel_globals_ctor(zend_accel_globals *accel_globals TSRMLS_DC)
-{
+{ENTER(accel_globals_ctor)
 	memset(accel_globals, 0, sizeof(zend_accel_globals));
 	zend_hash_init(&accel_globals->function_table, zend_hash_num_elements(CG(function_table)), NULL, ZEND_FUNCTION_DTOR, 1);
 	zend_accel_copy_internal_functions(TSRMLS_C);
 }
 
 static void accel_globals_dtor(zend_accel_globals *accel_globals TSRMLS_DC)
-{
+{ENTER(accel_globals_dtor)
 	accel_globals->function_table.pDestructor = NULL;
 	zend_hash_destroy(&accel_globals->function_table);
+    if (accel_globals->cache_path) {
+        free(accel_globals->cache_path);
+    }
 }
 
 static int accel_startup(zend_extension *extension)
-{
+{NOENTER(accel_startup)
 	zend_function *func;
 	zend_ini_entry *ini_entry;
 	TSRMLS_FETCH();
@@ -2369,6 +2395,19 @@ static int accel_startup(zend_extension *extension)
 	if (ZCG(enabled) == 0) {
 		return SUCCESS ;
 	}
+#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+    if (strcmp(sapi_module.name, "cli") != 0) {
+        /* Follow O+ strategy for for sapi's other than cli */ 
+        return accel_deferred_startup(TSRMLS_C);
+    }
+	return SUCCESS ;
+}
+static int accel_deferred_startup(TSRMLS_D)
+{ENTER(accel_deferred_startup)
+	zend_function *func;
+	zend_ini_entry *ini_entry;
+
+#endif
 /********************************************/
 /* End of non-SHM dependent initializations */
 /********************************************/
@@ -2451,13 +2490,15 @@ static int accel_startup(zend_extension *extension)
 				char *key;
 
 				zend_shared_alloc_lock(TSRMLS_C);
-				key = zend_shared_alloc(ZCG(include_path_len) + 2);
-				if (key) {
-					memcpy(key, ZCG(include_path), ZCG(include_path_len) + 1);
-					key[ZCG(include_path_len) + 1] = 'A' + ZCSG(include_paths).num_entries;
-					ZCG(include_path_key) = key + ZCG(include_path_len) + 1;
-					zend_accel_hash_update(&ZCSG(include_paths), key, ZCG(include_path_len) + 1, 0, ZCG(include_path_key));
-				}
+    		    if (!zend_accel_hash_find(&ZCSG(include_paths), ZCG(include_path), ZCG(include_path_len) + 1)) {
+				    key = zend_shared_alloc(ZCG(include_path_len) + 2);
+				    if (key) {
+					    memcpy(key, ZCG(include_path), ZCG(include_path_len) + 1);
+					    key[ZCG(include_path_len) + 1] = 'A' + ZCSG(include_paths).num_entries;
+					    ZCG(include_path_key) = key + ZCG(include_path_len) + 1;
+					    zend_accel_hash_update(&ZCSG(include_paths), key, ZCG(include_path_len) + 1, 0, ZCG(include_path_key));
+				    }
+                }
 				zend_shared_alloc_unlock(TSRMLS_C);
 			}
 		} else {
@@ -2488,16 +2529,17 @@ static int accel_startup(zend_extension *extension)
 }
 
 static void accel_free_ts_resources()
-{
+{NOENTER(accel_free_ts_resources)
 #ifndef ZTS
 	accel_globals_dtor(&accel_globals);
 #else
 	ts_free_id(accel_globals_id);
+    accel_globals_id = 0;
 #endif
 }
 
 static void accel_shutdown(zend_extension *extension)
-{
+{ENTER(accel_shutdown)
 	zend_ini_entry *ini_entry;
 	TSRMLS_FETCH();
 
@@ -2529,7 +2571,7 @@ static void accel_shutdown(zend_extension *extension)
 }
 
 void zend_accel_schedule_restart(TSRMLS_D)
-{
+{ENTER(zend_accel_schedule_restart)
 	if (ZCSG(restart_pending)) {
 		/* don't schedule twice */
 		return;
@@ -2560,7 +2602,7 @@ void zend_accel_schedule_restart(TSRMLS_D)
 	MUST call accelerator_shm_read_unlock after done lock operationss
 */
 int accelerator_shm_read_lock(TSRMLS_D)
-{
+{ENTER(accelerator_shm_read_lock)
 	if (ZCG(counted)) {
 		/* counted means we are holding read lock for SHM, so that nothing bad can happen */
 		return SUCCESS;
@@ -2580,7 +2622,7 @@ int accelerator_shm_read_lock(TSRMLS_D)
 
 /* must be called ONLY after SUCCESSFUL accelerator_shm_read_lock */
 void accelerator_shm_read_unlock(TSRMLS_D)
-{
+{ENTER(accelerator_shm_read_unlock)
 	if (!ZCG(counted)) {
 		/* counted is 0 - meaning we had to readlock manually, release readlock now */
 		accel_deactivate_now();

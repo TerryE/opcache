@@ -2,11 +2,37 @@ dnl
 dnl $Id$
 dnl
 
-PHP_ARG_ENABLE(optimizer-plus, whether to enable Zend OptimizerPlus support,
-[  --enable-optimizer-plus Enable Zend OptimizerPlus support])
+PHP_ARG_ENABLE(opcache, whether to enable Zend OptimizerPlus support,
+[  --enable-opcache Enable Zend OptimizerPlus support])
+
+AC_ARG_ENABLE(opcache-debug,
+[  --enable-opcache-debug Enable Zend OptimizerPlus debugging], 
+[
+  OPTIMIZER_PLUS_DEBUG=yes
+], 
+[
+  OPTIMIZER_PLUS_DEBUG=no
+])
+
+AC_ARG_ENABLE(opcache-cli-persistance,
+[  --enable-opcache-cli-persistance Enable Zend OptimizerPlus persistent cache for cli], 
+[
+  OPTIMIZER_PLUS_CLI_PERSISTANCE=yes
+], 
+[
+  OPTIMIZER_PLUS_CLI_PERSISTANCE=no
+])
 
 if test "$PHP_OPTIMIZER_PLUS" != "no"; then
   AC_DEFINE(HAVE_OPTIMIZER_PLUS, 1, [ ])
+
+  if test "$PHP_OPTIMIZER_PLUS_DEBUG" != "no"; then
+    AC_DEFINE(__DEBUG_ACCEL__, 1, [ ])
+  fi
+
+  if test "$OPTIMIZER_PLUS_CLI_PERSISTANCE" != "no"; then
+    AC_DEFINE(__ACCEL_CLI_PERSISTANCE__, 1, [ ])
+  fi
 
   AC_CHECK_FUNC(mprotect,[
     AC_DEFINE(HAVE_MPROTECT, 1, [Define if you have mprotect() function])
@@ -340,6 +366,7 @@ int main() {
 	shared_alloc_shm.c \
 	shared_alloc_mmap.c \
 	shared_alloc_posix.c \
+    shared_file_utils.c \
 	Optimizer/zend_optimizer.c,
 	$ext_shared,,,,yes)
 

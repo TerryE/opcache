@@ -47,7 +47,7 @@
 static uint zend_persist_zval_ptr_calc(zval **zp TSRMLS_DC);
 
 static uint zend_hash_persist_calc(HashTable *ht, int (*pPersistElement)(void *pElement TSRMLS_DC), size_t el_size TSRMLS_DC)
-{
+{ENTER(zend_hash_persist_calc)
 	Bucket *p = ht->pListHead;
 	START_SIZE();
 
@@ -92,7 +92,7 @@ static uint zend_hash_persist_calc(HashTable *ht, int (*pPersistElement)(void *p
 }
 
 static uint zend_persist_zval_calc(zval *z TSRMLS_DC)
-{
+{ENTER(zend_persist_zval_calc)
 	START_SIZE();
 
 #if ZEND_EXTENSION_API_NO >= PHP_5_3_X_API_NO
@@ -114,7 +114,7 @@ static uint zend_persist_zval_calc(zval *z TSRMLS_DC)
 }
 
 static uint zend_persist_zval_ptr_calc(zval **zp TSRMLS_DC)
-{
+{ENTER(zend_persist_zval_ptr_calc)
 	START_SIZE();
 	zval *new_ptr = zend_shared_alloc_get_xlat_entry(*zp);
 
@@ -126,7 +126,7 @@ static uint zend_persist_zval_ptr_calc(zval **zp TSRMLS_DC)
 }
 
 static uint zend_persist_op_array_calc(zend_op_array *op_array TSRMLS_DC)
-{
+{ENTER(zend_persist_op_array_calc)
 	START_SIZE();
 
 	if (op_array->type != ZEND_USER_FUNCTION) {
@@ -219,7 +219,7 @@ static uint zend_persist_op_array_calc(zend_op_array *op_array TSRMLS_DC)
 }
 
 static uint zend_persist_property_info_calc(zend_property_info *prop TSRMLS_DC)
-{
+{ENTER(zend_persist_property_info_calc)
 	START_SIZE();
 	ADD_INTERNED_STRING(prop->name, prop->name_length + 1);
 	if (ZCG(accel_directives).save_comments && prop->doc_comment) {
@@ -229,7 +229,7 @@ static uint zend_persist_property_info_calc(zend_property_info *prop TSRMLS_DC)
 }
 
 static uint zend_persist_class_entry_calc(zend_class_entry **pce TSRMLS_DC)
-{
+{ENTER(zend_persist_class_entry_calc)
 	zend_class_entry *ce = *pce;
 	START_SIZE();
 
@@ -324,12 +324,12 @@ static uint zend_persist_class_entry_calc(zend_class_entry **pce TSRMLS_DC)
 }
 
 static uint zend_accel_persist_class_table_calc(HashTable *class_table TSRMLS_DC)
-{
+{ENTER(zend_accel_persist_class_table_calc)
 	return zend_hash_persist_calc(class_table, (int (*)(void* TSRMLS_DC)) zend_persist_class_entry_calc, sizeof(zend_class_entry*) TSRMLS_CC);
 }
 
 uint zend_accel_script_persist_calc(zend_persistent_script *new_persistent_script, char *key, unsigned int key_length TSRMLS_DC)
-{
+{ENTER(zend_accel_script_persist_calc)
 	START_SIZE();
 
 	ADD_SIZE(zend_hash_persist_calc(&new_persistent_script->function_table, (int (*)(void* TSRMLS_DC)) zend_persist_op_array_calc, sizeof(zend_op_array) TSRMLS_CC));

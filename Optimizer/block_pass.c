@@ -2,7 +2,7 @@
 
 /* Checks if a constant (like "true") may be relaced by its value */
 static int zend_get_persistent_constant(char *name, uint name_len, zval *result, int copy TSRMLS_DC ELS_DC)
-{
+{ENTER(zend_get_persistent_constant)
 	zend_constant *c;
 	char *lookup_name;
 	int retval = 1;
@@ -41,7 +41,7 @@ static int zend_get_persistent_constant(char *name, uint name_len, zval *result,
 # define BLOCK_REF(b) b?op_array->opcodes-b->start_opline:-1
 
 static inline void print_block(zend_code_block *block, zend_op *opcodes, char *txt)
-{
+{ENTER(print_block)
 	fprintf(stderr, "%sBlock: %d-%d (%d)", txt, block->start_opline - opcodes, block->start_opline - opcodes + block->len - 1, block->len);
 	if (!block->access) {
 		fprintf(stderr, " unused");
@@ -81,7 +81,7 @@ static inline void print_block(zend_code_block *block, zend_op *opcodes, char *t
    code block is a set of opcodes with single flow of control, i.e. without jmps,
    branches, etc. */
 static int find_code_blocks(zend_op_array *op_array, zend_cfg *cfg)
-{
+{ENTER(find_code_blocks)
 	zend_op *opline;
 	zend_op *end = op_array->opcodes + op_array->last;
 	zend_code_block *blocks, *cur_block;
@@ -333,7 +333,7 @@ static inline void replace_source(zend_block_source *list, zend_code_block *old,
 }
 
 static inline void del_source(zend_code_block *from, zend_code_block *to)
-{
+{ENTER(del_source)
 	/* delete source 'from' from 'to'-s sources list */
 	zend_block_source **cs = &to->sources;
 
@@ -399,7 +399,7 @@ static inline void del_source(zend_code_block *from, zend_code_block *to)
 }
 
 static void delete_code_block(zend_code_block *block)
-{
+{ENTER(delete_code_block)
 	if (block->protected) {
 		return;
 	}
@@ -457,7 +457,7 @@ static void zend_access_path(zend_code_block *block)
 
 /* Traverse CFG, mark reachable basic blocks and build back references */
 static void zend_rebuild_access_path(zend_cfg *cfg, zend_op_array *op_array, int find_start)
-{
+{ENTER(zend_rebuild_access_path)
 	zend_code_block *blocks = cfg->blocks;
 	zend_code_block *start = find_start? NULL : blocks;
 	zend_code_block *b;
@@ -534,7 +534,7 @@ static void zend_rebuild_access_path(zend_cfg *cfg, zend_op_array *op_array, int
 	}
 
 static void zend_optimize_block(zend_code_block *block, zend_op_array *op_array, char *used_ext TSRMLS_DC)
-{
+{ENTER(zend_optimize_block)
 	zend_op *opline = block->start_opline;
 	zend_op *end, *last_op = NULL;
 	zend_op **Tsource = NULL;
@@ -1144,7 +1144,7 @@ static void zend_optimize_block(zend_code_block *block, zend_op_array *op_array,
 
 /* Rebuild plain (optimized) op_array from CFG */
 static void assemble_code_blocks(zend_cfg *cfg, zend_op_array *op_array)
-{
+{ENTER(assemble_code_blocks)
 	zend_code_block *blocks = cfg->blocks;
 	zend_op *new_opcodes = emalloc(op_array->last * sizeof(zend_op));
 	zend_op *opline = new_opcodes;
@@ -1266,7 +1266,7 @@ static void assemble_code_blocks(zend_cfg *cfg, zend_op_array *op_array)
 }
 
 static void zend_jmp_optimization(zend_code_block *block, zend_op_array *op_array, zend_code_block *blocks)
-{
+{ENTER(zend_jmp_optimization)
 	/* last_op is the last opcode of the current block */
 	zend_op *last_op = (block->start_opline + block->len - 1);
 
@@ -1798,7 +1798,7 @@ next_target_znz:
 /* Find a set of variables which are used outside of the block where they are
  * defined. We won't apply some optimization patterns for sush variables. */
 static void zend_t_usage(zend_code_block *block, zend_op_array *op_array, char *used_ext)
-{
+{ENTER(zend_t_usage)
 	zend_code_block *next_block = block->next;
 	char *usage;
 	char *defined_here;
@@ -1956,7 +1956,7 @@ static void zend_t_usage(zend_code_block *block, zend_op_array *op_array, char *
 #define PASSES 3
 
 static void zend_block_optimization(zend_op_array *op_array TSRMLS_DC)
-{
+{ENTER(zend_block_optimization)
 	zend_cfg cfg;
 	zend_code_block *cur_block;
 	int pass;

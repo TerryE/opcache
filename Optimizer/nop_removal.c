@@ -3,7 +3,7 @@
  */
 
 static void nop_removal(zend_op_array *op_array)
-{
+{ENTER(nop_removal)
 	zend_op *end, *opline;
 	zend_uint new_count, i, shift;
 	int j;

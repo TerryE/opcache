@@ -38,7 +38,7 @@ static void *mapping_base;
 #define MAX_MAP_RETRIES 25
 
 static void zend_win_error_message(int type, char *msg, int err)
-{
+{ENTER(zend_win_error_message)
 	LPVOID lpMsgBuf;
 	HANDLE h;
 	char *ev_msgs[2];
@@ -75,7 +75,7 @@ static void zend_win_error_message(int type, char *msg, int err)
 }
 
 static char *create_name_with_username(char *name)
-{
+{ENTER(create_name_with_username)
 	static char newname[MAXPATHLEN + UNLEN + 4];
 	char uname[UNLEN + 1];
 	DWORD unsize = UNLEN;
@@ -86,7 +86,7 @@ static char *create_name_with_username(char *name)
 }
 
 static char *get_mmap_base_file(void)
-{
+{ENTER(get_mmap_base_file)
 	static char windir[MAXPATHLEN+UNLEN + 3 + sizeof("\\\\@")];
 	char uname[UNLEN + 1];
 	DWORD unsize = UNLEN;
@@ -100,7 +100,7 @@ static char *get_mmap_base_file(void)
 }
 
 void zend_shared_alloc_create_lock(void)
-{
+{ENTER(zend_shared_alloc_create_lock)
 	memory_mutex = CreateMutex(NULL, FALSE, create_name_with_username(ACCEL_MUTEX_NAME));
 	if (!memory_mutex) {
 		zend_accel_error(ACCEL_LOG_FATAL, "Cannot create mutex");
@@ -110,7 +110,7 @@ void zend_shared_alloc_create_lock(void)
 }
 
 void zend_shared_alloc_lock_win32(void)
-{
+{ENTER(zend_shared_alloc_lock_win32)
 	DWORD waitRes = WaitForSingleObject(memory_mutex, INFINITE);
 
 	if (waitRes == WAIT_FAILED) {
@@ -119,12 +119,12 @@ void zend_shared_alloc_lock_win32(void)
 }
 
 void zend_shared_alloc_unlock_win32(void)
-{
+{ENTER(zend_shared_alloc_unlock_win32)
 	ReleaseMutex(memory_mutex);
 }
 
 static int zend_shared_alloc_reattach(size_t requested_size, char **error_in)
-{
+{ENTER(zend_shared_alloc_reattach)
 	int err;
 	void *wanted_mapping_base;
 	char *mmap_base_file = get_mmap_base_file();
@@ -172,7 +172,7 @@ static int zend_shared_alloc_reattach(size_t requested_size, char **error_in)
 }
 
 static int create_segments(size_t requested_size, zend_shared_segment ***shared_segments_p, int *shared_segments_count, char **error_in)
-{
+{ENTER(create_segments-win32)
 	int err, ret;
 	zend_shared_segment *shared_segment;
 	int map_retries = 0;
@@ -317,7 +317,7 @@ static int create_segments(size_t requested_size, zend_shared_segment ***shared_
 }
 
 static int detach_segment(zend_shared_segment *shared_segment)
-{
+{ENTER(detach_segment-win32)
 	zend_shared_alloc_lock_win32();
 	if (mapping_base) {
 		UnmapViewOfFile(mapping_base);
@@ -329,7 +329,7 @@ static int detach_segment(zend_shared_segment *shared_segment)
 }
 
 static size_t segment_type_size(void)
-{
+{ENTER(segment_type_size-win32)
 	return sizeof(zend_shared_segment);
 }
 

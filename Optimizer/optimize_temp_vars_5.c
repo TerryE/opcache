@@ -71,7 +71,7 @@ static const char op_const_means_class[256]  = {
 	}
 
 static void optimize_temporary_variables(zend_op_array *op_array)
-{
+{ENTER(optimize_temporary_variables)
 	int T = op_array->T;
 	char *taken_T;			/* T index in use */
 	zend_op **start_of_T;	/* opline where T is first used */
