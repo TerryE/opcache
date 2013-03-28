@@ -179,7 +179,7 @@ void zend_shared_alloc_lock_win32(void);
 void zend_shared_alloc_unlock_win32(void);
 #endif
 
-#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+#ifdef OPCACHE_CLI_PERSISTANCE
 extern int zend_shared_load_sma(zend_shared_segment *shared_segment);
 extern int zend_shared_save_sma(zend_shared_segment *shared_segment);
 extern void zend_accel_clear_saved_sma(void);

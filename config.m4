@@ -398,6 +398,7 @@ int main() { return 0; }
 	shared_alloc_shm.c \
 	shared_alloc_mmap.c \
 	shared_alloc_posix.c \
+    shared_file_utils.c \
 	Optimizer/zend_optimizer.c,
 	shared,,,,yes)
 

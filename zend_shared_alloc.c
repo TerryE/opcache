@@ -303,7 +303,7 @@ void *zend_shared_alloc(size_t size)
 			ZSMMG(shared_segments)[i]->pos += block_size;
 			ZSMMG(shared_free) -= block_size;
 			memset(retval, 0, block_size);
-#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+#ifdef OPCACHE_CLI_PERSISTANCE
             ZCG(new_sma_alloc_count)++;
             DEBUG2(ALLOC, "%u bytes allocated at %p", (uint) size, retval);
 #endif

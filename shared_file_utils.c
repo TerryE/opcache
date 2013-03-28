@@ -21,7 +21,7 @@
 */
 
 #include "zend_shared_alloc.h"
-#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+#ifdef OPCACHE_CLI_PERSISTANCE
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -38,7 +38,7 @@
    1) Even thought the will only ever by one thread for CLI and GCI processes, CLI persistance is
       still TSRM enabled to allow CLI based testing of TSRM builds.
 
-   2) TODO: add compile-time checks only to enable OPTIMIZER_PLUS_CLI_PERSISTANCE when PCRE is available.
+   2) TODO: add compile-time checks only to enable OPCACHE_CLI_PERSISTANCE when PCRE is available.
 
    3) TODO: GCC on ZCG(cache_path)
 
@@ -241,7 +241,7 @@ static int load_sma_from_file(FILE *src, uint comp_size, void *dest, uint *size,
         return ALLOC_SUCCESS;
     }
 
-	smm_shared_globals = (zend_smm_shared_globals *) (((char *) dest) + sizeof(zend_shared_memory_block_header));
+	smm_shared_globals = (zend_smm_shared_globals *) dest;
     return SUCCESSFULLY_REATTACHED;
 }
 
@@ -479,4 +479,4 @@ static void relocate_sma(zend_shared_segment *shared_segment, unsigned char *rbv
 }
 /* }}} */
 
-#endif /* OPTIMIZER_PLUS_CLI_PERSISTANCE */
+#endif /* OPCACHE_CLI_PERSISTANCE */

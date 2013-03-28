@@ -56,7 +56,7 @@ static int create_segments(size_t requested_size, zend_shared_segment ***shared_
 	shared_segment->pos = 0;
 	shared_segment->size = requested_size;
 
-#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+#ifdef OPCACHE_CLI_PERSISTANCE
     /* In the case of the CLI SAPI, the SMA can be "reattached" to a previous dump if it exists */
     if (strcmp(sapi_module.name, "cli") == 0) {
     	TSRMLS_FETCH();

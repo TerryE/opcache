@@ -245,7 +245,7 @@ ZEND_INI_BEGIN()
 	STD_PHP_INI_ENTRY("opcache.debug_flags", "0"   , PHP_INI_SYSTEM, OnUpdateLong, 
 accel_directives.debug_flags,               zend_accel_globals, accel_globals)
 #endif
-#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+#ifdef OPCACHE_CLI_PERSISTANCE
 	STD_PHP_INI_ENTRY("opcache.cache_pattern", NULL, PHP_INI_PERDIR,	OnUpdateString,	                             accel_directives.cache_pattern,                 zend_accel_globals, accel_globals)
 	STD_PHP_INI_ENTRY("opcache.cache_replacement", NULL, PHP_INI_PERDIR,	OnUpdateString,	                             accel_directives.cache_replacement,                 zend_accel_globals, accel_globals)
 #endif

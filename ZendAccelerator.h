@@ -159,7 +159,7 @@ extern int lock_file;
 #endif
 
 #ifdef __ACCEL_CLI_PERSISTANCE__
-#define OPTIMIZER_PLUS_CLI_PERSISTANCE
+#define OPCACHE_CLI_PERSISTANCE
 #endif
 
 
@@ -240,7 +240,7 @@ typedef struct _zend_accel_directives {
 #ifdef ACCEL_DEBUG
     uint           debug_flags;       /* TE addition */
 #endif
-#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+#ifdef OPCACHE_CLI_PERSISTANCE
     char          *cache_pattern;     /* TE addition */
     char          *cache_replacement; /* TE addition */
 #endif
@@ -272,7 +272,7 @@ typedef struct _zend_accel_globals {
 	int                     key_len;
 	char                    key[MAXPATHLEN * 8];
     char                   *cache_path;
-#ifdef OPTIMIZER_PLUS_CLI_PERSISTANCE
+#ifdef OPCACHE_CLI_PERSISTANCE
     int                     new_sma_alloc_count;
 #endif
 } zend_accel_globals;
