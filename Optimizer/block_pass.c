@@ -1,6 +1,6 @@
 #define DEBUG_BLOCKPASS 0
 
-/* Checks if a constant (like "true") may be relaced by its value */
+/* Checks if a constant (like "true") may be replaced by its value */
 static int zend_get_persistent_constant(char *name, uint name_len, zval *result, int copy TSRMLS_DC ELS_DC)
 {ENTER(zend_get_persistent_constant)
 	zend_constant *c;
@@ -167,7 +167,7 @@ static int find_code_blocks(zend_op_array *op_array, zend_cfg *cfg)
 			blocks[op_array->try_catch_array[i].try_op].protected = 1;
 		}
 	}
-	/* Currentrly, we don't optimize op_arrays with BRK/CONT/GOTO opcodes,
+	/* Currently, we don't optimize op_arrays with BRK/CONT/GOTO opcodes,
 	 * but, we have to keep brk_cont_array to avoid memory leaks during
 	 * exception handling */
 	if (op_array->last_brk_cont) {
@@ -370,7 +370,7 @@ static inline void del_source(zend_code_block *from, zend_code_block *to)
 				/* move block to new location */
 				memmove(new_to, to->start_opline, sizeof(zend_op)*to->len);
 			}
-			/* join blocks' lengthes */
+			/* join blocks' lengths */
 			from_block->len += to->len;
 			/* move 'to'`s references to 'from' */
 			to->start_opline = NULL;
@@ -462,7 +462,7 @@ static void zend_rebuild_access_path(zend_cfg *cfg, zend_op_array *op_array, int
 	zend_code_block *start = find_start? NULL : blocks;
 	zend_code_block *b;
 
-	/* Mark all blocks as unaccessable and destroy back references */
+	/* Mark all blocks as unaccessible and destroy back references */
 	b = blocks;
 	while (b != NULL) {
 		zend_block_source *cs;
@@ -480,10 +480,10 @@ static void zend_rebuild_access_path(zend_cfg *cfg, zend_op_array *op_array, int
 		b = b->next;
 	}
 
-	/* Walk thorough all pathes */
+	/* Walk thorough all paths */
 	zend_access_path(start);
 
-	/* Add brk/cont pathes */
+	/* Add brk/cont paths */
 	if (op_array->last_brk_cont) {
 		int i;
 		for (i=0; i< op_array->last_brk_cont; i++) {
@@ -493,7 +493,7 @@ static void zend_rebuild_access_path(zend_cfg *cfg, zend_op_array *op_array, int
 		}
 	}
 
-	/* Add exception pathes */
+	/* Add exception paths */
 	if (op_array->last_try_catch) {
 		int i;
 		for (i=0; i< op_array->last_try_catch; i++) {
@@ -972,7 +972,11 @@ static void zend_optimize_block(zend_code_block *block, zend_op_array *op_array,
 			zval result;
 
 			if (unary_op) {
+#if ZEND_EXTENSION_API_NO < PHP_5_3_X_API_NO
+				unary_op(&result, &ZEND_OP1_LITERAL(opline));
+#else
 				unary_op(&result, &ZEND_OP1_LITERAL(opline) TSRMLS_CC);
+#endif
 				literal_dtor(&ZEND_OP1_LITERAL(opline));
 			} else {
 				/* BOOL */
@@ -998,7 +1002,7 @@ static void zend_optimize_block(zend_code_block *block, zend_op_array *op_array,
 				  	VAR_SOURCE(opline->op1) &&
 				  	VAR_SOURCE(opline->op1)->opcode == ZEND_INIT_STRING) {
 			/* convert T = INIT_STRING(), T = ADD_STRING(T, X) to T = QM_ASSIGN(X) */
-			/* CHECKME: Remove ZEND_ADD_VAR optimizsation, since some conversions -
+			/* CHECKME: Remove ZEND_ADD_VAR optimization, since some conversions -
 			   namely, BOOL(false)->string - don't allocate memory but use empty_string
 			   and ADD_CHAR fails */
 			zend_op *src = VAR_SOURCE(opline->op1);
@@ -1304,9 +1308,11 @@ static void zend_jmp_optimization(zend_code_block *block, zend_op_array *op_arra
 					/* JMP L, L: JMP L1 -> JMP L1 */
 					/* JMP L, L: JMPZNZ L1,L2 -> JMPZNZ L1,L2 */
 					*last_op = *target;
+#if ZEND_EXTENSION_API_NO < PHP_5_4_X_API_NO
 					if (ZEND_OP1_TYPE(last_op) == IS_CONST) {
 						zval_copy_ctor(&ZEND_OP1_LITERAL(last_op));
 					}
+#endif
 					del_source(block, block->op1_to);
 					if (block->op1_to->op2_to) {
 						block->op2_to = block->op1_to->op2_to;
@@ -1332,9 +1338,11 @@ static void zend_jmp_optimization(zend_code_block *block, zend_op_array *op_arra
 			    	      target->opcode == ZEND_EXIT) {
 					/* JMP L, L: RETURN to immediate RETURN */
 					*last_op = *target;
+#if ZEND_EXTENSION_API_NO < PHP_5_4_X_API_NO
 					if (ZEND_OP1_TYPE(last_op) == IS_CONST) {
 						zval_copy_ctor(&ZEND_OP1_LITERAL(last_op));
 					}
+#endif
 					del_source(block, block->op1_to);
 					block->op1_to = NULL;
 #if 0

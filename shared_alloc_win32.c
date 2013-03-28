@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -26,11 +26,11 @@
 #include <process.h>
 #include <LMCONS.H>
 
-#define ACCEL_FILEMAP_NAME "ZendOptimizer+.SharedMemoryArea"
-#define ACCEL_MUTEX_NAME "ZendOptimizer+.SharedMemoryMutex"
+#define ACCEL_FILEMAP_NAME "ZendOPcache.SharedMemoryArea"
+#define ACCEL_MUTEX_NAME "ZendOPcache.SharedMemoryMutex"
 #define ACCEL_FILEMAP_BASE_DEFAULT 0x01000000
-#define ACCEL_FILEMAP_BASE "ZendOptimizer+.MemoryBase"
-#define ACCEL_EVENT_SOURCE "Zend Optimizer+"
+#define ACCEL_FILEMAP_BASE "ZendOPcache.MemoryBase"
+#define ACCEL_EVENT_SOURCE "Zend OPcache"
 
 static HANDLE memfile = NULL, memory_mutex = NULL;
 static void *mapping_base;
@@ -166,7 +166,7 @@ static int zend_shared_alloc_reattach(size_t requested_size, char **error_in)
 		}
 		return ALLOC_FAIL_MAPPING;
 	}
-	smm_shared_globals = (zend_smm_shared_globals *) (((char *) mapping_base) + sizeof(zend_shared_memory_block_header));
+	smm_shared_globals = (zend_smm_shared_globals *) mapping_base;
 
 	return SUCCESSFULLY_REATTACHED;
 }
@@ -275,7 +275,7 @@ static int create_segments(size_t requested_size, zend_shared_segment ***shared_
 		}
 		if (sscanf(s, "%p", &default_mapping_base_set[0]) != 1) {
 			zend_shared_alloc_unlock_win32();
-			zend_win_error_message(ACCEL_LOG_FATAL, "Bad mapping address specified in zend_optimizerplus.mmap_base", err);
+			zend_win_error_message(ACCEL_LOG_FATAL, "Bad mapping address specified in opcache.mmap_base", err);
 			return ALLOC_FAILURE;
 		}
 	}

@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -77,7 +77,7 @@ zend_persistent_script* create_persistent_script(void)
 	memset(persistent_script, 0, sizeof(zend_persistent_script));
 
 	zend_hash_init(&persistent_script->function_table, 100, NULL, (dtor_func_t) zend_accel_destroy_zend_function, 0);
-	/* class_table is usualy destroyed by free_persistent_script() that
+	/* class_table is usually destroyed by free_persistent_script() that
 	 * overrides destructor. ZEND_CLASS_DTOR may be used by standard
 	 * PHP compiler
 	 */
@@ -858,7 +858,7 @@ static void zend_do_delayed_early_binding(zend_op_array *op_array, zend_uint ear
 			}
 			opline_num = op_array->opcodes[opline_num].result.u.opline_num;
 		}
-		zend_restore_compiled_filename(orig_compiled_filename);
+		zend_restore_compiled_filename(orig_compiled_filename TSRMLS_CC);
 		CG(in_compilation) = orig_in_compilation;
 	}
 }
