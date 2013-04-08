@@ -163,6 +163,7 @@ int zend_shared_alloc_startup(int requested_size)
 	 * - make it temporarily point to a local variable
 	 */
 	smm_shared_globals = &tmp_shared_globals;
+    memset(smm_shared_globals, 0, sizeof(zend_smm_shared_globals));
 	ZSMMG(shared_free) = requested_size; /* goes to tmp_shared_globals.shared_free */
 
 	zend_shared_alloc_create_lock();
