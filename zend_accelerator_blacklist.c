@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -46,7 +46,7 @@ struct _zend_regexp_list {
 zend_blacklist accel_blacklist;
 
 void zend_accel_blacklist_init(zend_blacklist *blacklist)
-{
+{ENTER(zend_accel_blacklist_init)
 	blacklist->pos = 0;
 	blacklist->size = ZEND_BLACKLIST_BLOCK_SIZE;
 
@@ -63,7 +63,7 @@ void zend_accel_blacklist_init(zend_blacklist *blacklist)
 }
 
 static void blacklist_report_regexp_error(regex_t *comp_regex, int reg_err)
-{
+{ENTER(blacklist_report_regexp_error)
 	char *errbuf;
 	int errsize = regerror(reg_err, comp_regex, NULL, 0);
 	errbuf = malloc(errsize);
@@ -77,7 +77,7 @@ static void blacklist_report_regexp_error(regex_t *comp_regex, int reg_err)
 }
 
 static void zend_accel_blacklist_update_regexp(zend_blacklist *blacklist)
-{
+{ENTER(zend_accel_blacklist_update_regexp)
 	char *regexp;
 	int i, j, clen, reg_err, end = 0, rlen = 6;
 	zend_regexp_list **regexp_list_it, *it;
@@ -140,7 +140,7 @@ static void zend_accel_blacklist_update_regexp(zend_blacklist *blacklist)
 }
 
 void zend_accel_blacklist_shutdown(zend_blacklist *blacklist)
-{
+{ENTER(zend_accel_blacklist_shutdown)
 	zend_blacklist_entry *p = blacklist->entries, *end = blacklist->entries + blacklist->pos;
 
 	while (p<end) {
@@ -161,7 +161,7 @@ void zend_accel_blacklist_shutdown(zend_blacklist *blacklist)
 }
 
 static inline void zend_accel_blacklist_allocate(zend_blacklist *blacklist)
-{
+{ENTER(zend_accel_blacklist_allocate)
 	if (blacklist->pos == blacklist->size) {
 		blacklist->size += ZEND_BLACKLIST_BLOCK_SIZE;
 		blacklist->entries = (zend_blacklist_entry *) realloc(blacklist->entries, sizeof(zend_blacklist_entry)*blacklist->size);
@@ -169,7 +169,7 @@ static inline void zend_accel_blacklist_allocate(zend_blacklist *blacklist)
 }
 
 void zend_accel_blacklist_load(zend_blacklist *blacklist, char *filename)
-{
+{ENTER(zend_accel_blacklist_load)
 	char buf[MAXPATHLEN + 1], real_path[MAXPATHLEN + 1];
 	FILE *fp;
 	int path_length;
@@ -234,7 +234,7 @@ void zend_accel_blacklist_load(zend_blacklist *blacklist, char *filename)
 }
 
 zend_bool zend_accel_blacklist_is_blacklisted(zend_blacklist *blacklist, char *verify_path)
-{
+{ENTER(zend_accel_blacklist_is_blacklisted)
 	int ret = 0;
 	zend_regexp_list *regexp_list_it = blacklist->regexp_list;
 
@@ -252,7 +252,7 @@ zend_bool zend_accel_blacklist_is_blacklisted(zend_blacklist *blacklist, char *v
 }
 
 void zend_accel_blacklist_apply(zend_blacklist *blacklist, apply_func_arg_t func, void *argument TSRMLS_DC)
-{
+{ENTER(zend_accel_blacklist_apply)
 	int i;
 
 	for (i = 0; i < blacklist->pos; i++) {

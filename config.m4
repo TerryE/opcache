@@ -2,11 +2,36 @@ dnl
 dnl $Id$
 dnl
 
-PHP_ARG_ENABLE(optimizer-plus, whether to enable Zend OptimizerPlus support,
-[  --enable-optimizer-plus Enable Zend OptimizerPlus support])
+PHP_ARG_ENABLE(opcache, whether to enable Zend OPcache support,
+[  --enable-opcache Enable Zend OPcache support], yes)
 
-if test "$PHP_OPTIMIZER_PLUS" != "no"; then
-  AC_DEFINE(HAVE_OPTIMIZER_PLUS, 1, [ ])
+AC_ARG_ENABLE(opcache-debug,
+[  --enable-opcache-debug Enable Zend OptimizerPlus debugging], 
+[
+  OPCACHE_DEBUG=yes
+], 
+[
+  OPCACHE_DEBUG=no
+])
+
+AC_ARG_ENABLE(opcache-file-cache,
+[  --enable-opcache-file-cache Enable OPcache file cache for CLI and CGI], 
+[
+  OPCACHE_ENABLE_FILE_CACHE=yes
+], 
+[
+  OPCACHE_ENABLE_FILE_CACHE=no
+])
+
+if test "$PHP_OPCACHE" != "no"; then
+
+  if test "$OPCACHE_PLUS_DEBUG" != "no"; then
+    AC_DEFINE(__DEBUG_ACCEL__, 1, [ ])
+  fi
+
+  if test "$OPCACHE_ENABLE_FILE_CACHE" != "no"; then
+    AC_DEFINE(__ACCEL_CLI_PERSISTANCE__, 1, [ ])
+  fi
 
   AC_CHECK_FUNC(mprotect,[
     AC_DEFINE(HAVE_MPROTECT, 1, [Define if you have mprotect() function])
@@ -326,8 +351,41 @@ int main() {
     AC_DEFINE(HAVE_SHM_MMAP_FILE, 1, [Define if you have mmap() SHM support])
     msg=yes,msg=no,msg=no)
   AC_MSG_RESULT([$msg])
+
+  AC_MSG_CHECKING(for known struct flock definition)
+  dnl Copied from ZendAccelerator.h
+  AC_TRY_RUN([
+#include <fcntl.h>
+#include <stdlib.h>
+
+#ifndef ZEND_WIN32
+extern int lock_file;
+
+# if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || (defined(__APPLE__) && defined(__MACH__)/* Darwin */) || defined(__OpenBSD__) || defined(__NetBSD__)
+#  define FLOCK_STRUCTURE(name, type, whence, start, len) \
+                struct flock name = {start, len, -1, type, whence}
+# elif defined(__svr4__)
+#  define FLOCK_STRUCTURE(name, type, whence, start, len) \
+                struct flock name = {type, whence, start, len}
+# elif defined(__linux__) || defined(__hpux)
+#  define FLOCK_STRUCTURE(name, type, whence, start, len) \
+                struct flock name = {type, whence, start, len, 0}
+# elif defined(_AIX)
+#  if defined(_LARGE_FILES) || defined(__64BIT__)
+#   define FLOCK_STRUCTURE(name, type, whence, start, len) \
+                struct flock name = {type, whence, 0, 0, 0, start, len }
+#  else
+#   define FLOCK_STRUCTURE(name, type, whence, start, len) \
+                struct flock name = {type, whence, start, len}
+#  endif
+# else
+#  error "Don't know how to define struct flock"
+# endif
+#endif
+int main() { return 0; }
+], [], [AC_MSG_ERROR([Don't know how to define struct flock on this system[,] set --enable-opcache=no])], [])
   
-  PHP_NEW_EXTENSION(ZendOptimizerPlus,
+  PHP_NEW_EXTENSION(opcache,
 	ZendAccelerator.c \
 	zend_accelerator_blacklist.c \
 	zend_accelerator_debug.c \
@@ -340,8 +398,9 @@ int main() {
 	shared_alloc_shm.c \
 	shared_alloc_mmap.c \
 	shared_alloc_posix.c \
+    shared_file_utils.c \
 	Optimizer/zend_optimizer.c,
-	$ext_shared,,,,yes)
+	shared,,,,yes)
 
   PHP_ADD_BUILD_DIR([$ext_builddir/Optimizer], 1)
 fi

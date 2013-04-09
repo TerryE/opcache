@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -49,7 +49,7 @@ static int zend_prepare_function_for_execution(zend_op_array *op_array);
 static void zend_hash_clone_zval(HashTable *ht, HashTable *source, int bind);
 
 static void zend_accel_destroy_zend_function(zend_function *function)
-{
+{ENTER(zend_accel_destroy_zend_function)
 	TSRMLS_FETCH();
 
 	if (function->type == ZEND_USER_FUNCTION) {
@@ -64,7 +64,7 @@ static void zend_accel_destroy_zend_function(zend_function *function)
 }
 
 static void zend_accel_destroy_zend_class(zend_class_entry **pce)
-{
+{ENTER(zend_accel_destroy_zend_class)
 	zend_class_entry *ce = *pce;
 
 	ce->function_table.pDestructor = (dtor_func_t) zend_accel_destroy_zend_function;
@@ -72,12 +72,12 @@ static void zend_accel_destroy_zend_class(zend_class_entry **pce)
 }
 
 zend_persistent_script* create_persistent_script(void)
-{
+{ENTER(create_persistent_script)
 	zend_persistent_script *persistent_script = (zend_persistent_script *) emalloc(sizeof(zend_persistent_script));
 	memset(persistent_script, 0, sizeof(zend_persistent_script));
 
 	zend_hash_init(&persistent_script->function_table, 100, NULL, (dtor_func_t) zend_accel_destroy_zend_function, 0);
-	/* class_table is usualy destroyed by free_persistent_script() that
+	/* class_table is usually destroyed by free_persistent_script() that
 	 * overrides destructor. ZEND_CLASS_DTOR may be used by standard
 	 * PHP compiler
 	 */
@@ -87,7 +87,7 @@ zend_persistent_script* create_persistent_script(void)
 }
 
 void free_persistent_script(zend_persistent_script *persistent_script, int destroy_elements)
-{
+{ENTER(free_persistent_script)
 	if (destroy_elements) {
 		persistent_script->function_table.pDestructor = (dtor_func_t)zend_accel_destroy_zend_function;
 		persistent_script->class_table.pDestructor = (dtor_func_t)zend_accel_destroy_zend_class;
@@ -107,12 +107,12 @@ void free_persistent_script(zend_persistent_script *persistent_script, int destr
 }
 
 static int is_not_internal_function(zend_function *function)
-{
+{ENTER(is_not_internal_function)
 	return(function->type != ZEND_INTERNAL_FUNCTION);
 }
 
 void zend_accel_free_user_functions(HashTable *ht TSRMLS_DC)
-{
+{ENTER(zend_accel_free_user_functions)
 	dtor_func_t orig_dtor = ht->pDestructor;
 
 	ht->pDestructor = NULL;
@@ -121,12 +121,13 @@ void zend_accel_free_user_functions(HashTable *ht TSRMLS_DC)
 }
 
 static int move_user_function(zend_function *function TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key)
-{
+{ENTER(move_user_function)
 	HashTable *function_table = va_arg(args, HashTable *);
 	(void)num_args; /* keep the compiler happy */
 
 	if (function->type == ZEND_USER_FUNCTION) {
-		zend_hash_quick_update(function_table, hash_key->arKey, hash_key->nKeyLength, hash_key->h, function, sizeof(zend_function), NULL);
+		ENTER(move_user_function)
+        zend_hash_quick_update(function_table, hash_key->arKey, hash_key->nKeyLength, hash_key->h, function, sizeof(zend_function), NULL);
 		return 1;
 	} else {
 		return 0;
@@ -134,7 +135,7 @@ static int move_user_function(zend_function *function TSRMLS_DC, int num_args, v
 }
 
 void zend_accel_move_user_functions(HashTable *src, HashTable *dst TSRMLS_DC)
-{
+{ENTER(zend_accel_move_user_functions)
 	dtor_func_t orig_dtor = src->pDestructor;
 
 	src->pDestructor = NULL;
@@ -143,7 +144,7 @@ void zend_accel_move_user_functions(HashTable *src, HashTable *dst TSRMLS_DC)
 }
 
 static int copy_internal_function(zend_function *function, HashTable *function_table TSRMLS_DC)
-{
+{ENTER(copy_internal_function)
 	if (function->type == ZEND_INTERNAL_FUNCTION) {
 		zend_hash_update(function_table, function->common.function_name, strlen(function->common.function_name) + 1, function, sizeof(zend_function), NULL);
 	}
@@ -151,13 +152,13 @@ static int copy_internal_function(zend_function *function, HashTable *function_t
 }
 
 void zend_accel_copy_internal_functions(TSRMLS_D)
-{
+{ENTER(zend_accel_copy_internal_functions)
 	zend_hash_apply_with_argument(CG(function_table), (apply_func_arg_t)copy_internal_function, &ZCG(function_table) TSRMLS_CC);
 	ZCG(internal_functions_count) = zend_hash_num_elements(&ZCG(function_table));
 }
 
 static void zend_destroy_property_info(zend_property_info *property_info)
-{
+{ENTER(zend_destroy_property_info)
 	interned_efree((char*)property_info->name);
 	if (property_info->doc_comment) {
 		efree((char*)property_info->doc_comment);
@@ -165,7 +166,7 @@ static void zend_destroy_property_info(zend_property_info *property_info)
 }
 
 static inline zval* zend_clone_zval(zval *src, int bind TSRMLS_DC)
-{
+{ENTER(zend_clone_zval)
 	zval *ret, **ret_ptr = NULL;
 
 	if (!bind) {
@@ -207,7 +208,7 @@ static inline zval* zend_clone_zval(zval *src, int bind TSRMLS_DC)
 }
 
 static void zend_hash_clone_zval(HashTable *ht, HashTable *source, int bind)
-{
+{ENTER(zend_hash_clone_zval)
 	Bucket *p, *q, **prev;
 	ulong nIndex;
 	zval *ppz;
@@ -327,7 +328,7 @@ static void zend_hash_clone_zval(HashTable *ht, HashTable *source, int bind)
 }
 
 static void zend_hash_clone_methods(HashTable *ht, HashTable *source, zend_class_entry *old_ce, zend_class_entry *ce TSRMLS_DC)
-{
+{ENTER(zend_hash_clone_methods)
 	Bucket *p, *q, **prev;
 	ulong nIndex;
 	zend_class_entry **new_ce;
@@ -439,7 +440,7 @@ static void zend_hash_clone_methods(HashTable *ht, HashTable *source, zend_class
 }
 
 static void zend_hash_clone_prop_info(HashTable *ht, HashTable *source, zend_class_entry *old_ce, zend_class_entry *ce TSRMLS_DC)
-{
+{ENTER(zend_hash_clone_prop_info)
 	Bucket *p, *q, **prev;
 	ulong nIndex;
 	zend_class_entry **new_ce;
@@ -541,7 +542,7 @@ static void zend_hash_clone_prop_info(HashTable *ht, HashTable *source, zend_cla
 
 /* protects reference count, creates copy of statics */
 static int zend_prepare_function_for_execution(zend_op_array *op_array)
-{
+{ENTER(zend_prepare_function_for_execution)
 	HashTable *shared_statics = op_array->static_variables;
 
 	/* protect reference count */
@@ -570,7 +571,7 @@ static int zend_prepare_function_for_execution(zend_op_array *op_array)
 
 /* Protects class' refcount, copies default properties, functions and class name */
 static void zend_class_copy_ctor(zend_class_entry **pce)
-{
+{ENTER(zend_class_copy_ctor)
 	zend_class_entry *ce = *pce;
 	zend_class_entry *old_ce = ce;
 	zend_class_entry **new_ce;
@@ -764,7 +765,7 @@ static void zend_class_copy_ctor(zend_class_entry **pce)
 }
 
 static int zend_hash_unique_copy(HashTable *target, HashTable *source, unique_copy_ctor_func_t pCopyConstructor, uint size, int ignore_dups, void **fail_data, void **conflict_data)
-{
+{ENTER(zend_hash_unique_copy)
 	Bucket *p;
 	void *t;
 
@@ -803,7 +804,7 @@ static int zend_hash_unique_copy(HashTable *target, HashTable *source, unique_co
 }
 
 static void zend_accel_function_hash_copy(HashTable *target, HashTable *source, unique_copy_ctor_func_t pCopyConstructor)
-{
+{ENTER(zend_accel_function_hash_copy)
 	zend_function *function1, *function2;
 	TSRMLS_FETCH();
 
@@ -824,7 +825,7 @@ static void zend_accel_function_hash_copy(HashTable *target, HashTable *source, 
 }
 
 static void zend_accel_class_hash_copy(HashTable *target, HashTable *source, unique_copy_ctor_func_t pCopyConstructor TSRMLS_DC)
-{
+{ENTER(zend_accel_class_hash_copy)
 	zend_class_entry **pce1, **pce2;
 
 	if (zend_hash_unique_copy(target, source, pCopyConstructor, sizeof(zend_class_entry*), ZCG(accel_directives).ignore_dups, (void**)&pce1, (void**)&pce2) != SUCCESS) {
@@ -842,7 +843,7 @@ static void zend_accel_class_hash_copy(HashTable *target, HashTable *source, uni
 
 #if ZEND_EXTENSION_API_NO < PHP_5_3_X_API_NO
 static void zend_do_delayed_early_binding(zend_op_array *op_array, zend_uint early_binding TSRMLS_DC)
-{
+{ENTER(zend_do_delayed_early_binding)
 	zend_uint opline_num = early_binding;
 
 	if ((int)opline_num != -1) {
@@ -857,14 +858,14 @@ static void zend_do_delayed_early_binding(zend_op_array *op_array, zend_uint ear
 			}
 			opline_num = op_array->opcodes[opline_num].result.u.opline_num;
 		}
-		zend_restore_compiled_filename(orig_compiled_filename);
+		zend_restore_compiled_filename(orig_compiled_filename TSRMLS_CC);
 		CG(in_compilation) = orig_in_compilation;
 	}
 }
 #endif
 
 zend_op_array* zend_accel_load_script(zend_persistent_script *persistent_script, int from_shared_memory TSRMLS_DC)
-{
+{ENTER(zend_accel_load_script)
 	zend_op_array *op_array;
 
 	op_array = (zend_op_array *) emalloc(sizeof(zend_op_array));
@@ -967,7 +968,7 @@ zend_op_array* zend_accel_load_script(zend_persistent_script *persistent_script,
 #define ADLER32_DO16(buf)       ADLER32_DO8(buf, 0); ADLER32_DO8(buf, 8);
 
 unsigned int zend_adler32(unsigned int checksum, signed char *buf, uint len)
-{
+{ENTER(zend_adler32)
 	unsigned int s1 = checksum & 0xffff;
 	unsigned int s2 = (checksum >> 16) & 0xffff;
 	signed char *end;

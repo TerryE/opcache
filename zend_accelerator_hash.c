@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -30,14 +30,14 @@ static uint prime_numbers[] =
 static uint num_prime_numbers = sizeof(prime_numbers) / sizeof(uint);
 
 void zend_accel_hash_clean(zend_accel_hash *accel_hash)
-{
+{ENTER(zend_accel_hash_clean)
 	accel_hash->num_entries = 0;
 	accel_hash->num_direct_entries = 0;
 	memset(accel_hash->hash_table, 0, sizeof(zend_accel_hash_entry *)*accel_hash->max_num_entries);
 }
 
 void zend_accel_hash_init(zend_accel_hash *accel_hash, zend_uint hash_size)
-{
+{ENTER(zend_accel_hash_init)
 	uint i;
 
 	for (i=0; i<num_prime_numbers; i++) {
@@ -72,7 +72,7 @@ void zend_accel_hash_init(zend_accel_hash *accel_hash, zend_uint hash_size)
  * key needs to be already allocated as it is not copied
  */
 zend_accel_hash_entry* zend_accel_hash_update(zend_accel_hash *accel_hash, char *key, zend_uint key_length, zend_bool indirect, void *data)
-{
+{ENTER(zend_accel_hash_update)
 	zend_ulong hash_value;
 	zend_ulong index;
 	zend_accel_hash_entry *entry;
@@ -141,7 +141,7 @@ zend_accel_hash_entry* zend_accel_hash_update(zend_accel_hash *accel_hash, char 
  * Returns NULL if data doesn't exist
  */
 void* zend_accel_hash_find(zend_accel_hash *accel_hash, char *key, zend_uint key_length)
-{
+{ENTER(zend_accel_hash_find)
 	zend_ulong hash_value;
 	zend_ulong index;
 	zend_accel_hash_entry *entry;
@@ -169,7 +169,7 @@ void* zend_accel_hash_find(zend_accel_hash *accel_hash, char *key, zend_uint key
  * Returns NULL if it doesn't exist
  */
 zend_accel_hash_entry* zend_accel_hash_find_entry(zend_accel_hash *accel_hash, char *key, zend_uint key_length)
-{
+{ENTER(zend_accel_hash_find_entry)
 	zend_ulong hash_value;
 	zend_ulong index;
 	zend_accel_hash_entry *entry;
@@ -194,7 +194,7 @@ zend_accel_hash_entry* zend_accel_hash_find_entry(zend_accel_hash *accel_hash, c
 }
 
 int zend_accel_hash_unlink(zend_accel_hash *accel_hash, char *key, zend_uint key_length)
-{
+{ENTER(zend_accel_hash_unlink)
 	zend_ulong hash_value;
     zend_ulong index;
     zend_accel_hash_entry *entry, *last_entry=NULL;

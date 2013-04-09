@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -29,5 +29,48 @@
 #define ACCEL_LOG_DEBUG					4
 
 void zend_accel_error(int type, const char *format, ...);
+
+#define PERSISTENT 1
+
+#ifdef __DEBUG_ACCEL__
+# define ACCEL_DEBUG 1
+#endif
+
+# define ACCEL_DBG_ALLOC  (1<<0)  /* Storage Allocation */
+# define ACCEL_DBG_RELO   (1<<1)  /* Relocation outside pool */
+# define ACCEL_DBG_RELC   (1<<2)  /* Relocation Address check */
+# define ACCEL_DBG_RELR   (1<<3)  /* Missed relocation report */
+# define ACCEL_DBG_LOAD   (1<<4)  /* Load/Unload Info */
+# define ACCEL_DBG_ENTER  (1<<5)  /* Print out function enty audit */
+# define ACCEL_DBG_COUNTS (1<<6)  /* Print out function summary counts */
+# define ACCEL_DBG_FILES  (1<<7)  /* Print out any file requests */
+# define ACCEL_DBG_INTN   (1<<8)  /* Duplicate intern allocation */
+# define ACCEL_DBG_ZVAL   (1<<9)  /* ZVAL tracking */
+# define ACCEL_DBG_LOG_OPCODES (1<<10)  /* Opcode loggin */
+
+#ifdef ACCEL_DEBUG
+# define ENTER(s) int dummy_to_be_ignored = accel_debug_enter(#s);
+extern int ACCEL_debug_enter(char *s);
+#define IF_DEBUG(flg) if (ZCG(accel_directives.debug_flags) & ACCEL_DBG_ ## flg)
+#define DEBUG0(flg,fmt) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt)
+#define DEBUG1(flg,fmt,a1) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt, a1)
+#define DEBUG2(flg,fmt,a1,a2) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2)
+#define DEBUG3(flg,fmt,a1,a2,a3) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3)
+#define DEBUG4(flg,fmt,a1,a2,a3,a4) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4)
+#define DEBUG5(flg,fmt,a1,a2,a3,a4,a5) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4,a5)
+#else
+# define ENTER(s) 
+#define IF_DEBUG(flg) if (0)
+#define DEBUG0(flg,fmt)
+#define DEBUG1(flg,fmt,a1)
+#define DEBUG2(flg,fmt,a1,a2)
+#define DEBUG3(flg,fmt,a1,a2,a3)
+#define DEBUG4(flg,fmt,a1,a2,a3,a4)
+#define DEBUG5(flg,fmt,a1,a2,a3,a4,a5)
+#endif
+#define NOENTER(s)
+
+void accel_debug_dump(zend_op_array *array);
+int accel_debug_enter(char *s);
 
 #endif /* _ZEND_ACCELERATOR_DEBUG_H */

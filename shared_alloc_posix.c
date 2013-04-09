@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -37,7 +37,7 @@ typedef struct  {
 } zend_shared_segment_posix;
 
 static int create_segments(size_t requested_size, zend_shared_segment_posix ***shared_segments_p, int *shared_segments_count, char **error_in)
-{
+{ENTER(create_segments-posix)
 	zend_shared_segment_posix *shared_segment;
 	char shared_segment_name[sizeof("/ZendAccelerator.") + 20];
 
@@ -78,14 +78,14 @@ static int create_segments(size_t requested_size, zend_shared_segment_posix ***s
 }
 
 static int detach_segment(zend_shared_segment_posix *shared_segment)
-{
+{ENTER(detach_segment-posix)
 	munmap(shared_segment->common.p, shared_segment->common.size);
 	close(shared_segment->shm_fd);
 	return 0;
 }
 
 static size_t segment_type_size(void)
-{
+{ENTER(segment_type_size-posix)
 	return sizeof(zend_shared_segment_posix);
 }
 

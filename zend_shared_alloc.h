@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -89,10 +89,6 @@ typedef struct _handler_entry {
 	zend_shared_memory_handlers *handler;
 } zend_shared_memory_handler_entry;
 
-typedef struct _zend_shared_memory_block_header {
-	int size;
-} zend_shared_memory_block_header;
-
 typedef struct _zend_shared_memory_state {
 	int *positions;   /* current positions for each segment */
 	int  shared_free; /* amount of free shared memory */
@@ -159,7 +155,6 @@ void *zend_shared_alloc_get_xlat_entry(const void *old);
 size_t zend_shared_alloc_get_free_memory(void);
 void zend_shared_alloc_save_state(void);
 void zend_shared_alloc_restore_state(void);
-size_t zend_shared_alloc_get_largest_free_block(void);
 const char *zend_accel_get_shared_model(void);
 
 /* memory write protection */
@@ -182,6 +177,12 @@ extern zend_shared_memory_handlers zend_alloc_win32_handlers;
 void zend_shared_alloc_create_lock(void);
 void zend_shared_alloc_lock_win32(void);
 void zend_shared_alloc_unlock_win32(void);
+#endif
+
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+extern int zend_shared_load_sma(zend_shared_segment *shared_segment);
+extern int zend_shared_save_sma(zend_shared_segment *shared_segment);
+extern void zend_accel_clear_saved_sma(void);
 #endif
 
 #endif /* ZEND_SHARED_ALLOC_H */

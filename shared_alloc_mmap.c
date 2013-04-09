@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -28,13 +28,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include "SAPI.h"
 
 #if defined(MAP_ANON) && !defined(MAP_ANONYMOUS)
 # define MAP_ANONYMOUS MAP_ANON
 #endif
 
 static int create_segments(size_t requested_size, zend_shared_segment ***shared_segments_p, int *shared_segments_count, char **error_in)
-{
+{ENTER(create_segments-mmap)
 	zend_shared_segment *shared_segment;
 
 	*shared_segments_count = 1;
@@ -59,13 +60,13 @@ static int create_segments(size_t requested_size, zend_shared_segment ***shared_
 }
 
 static int detach_segment(zend_shared_segment *shared_segment)
-{
+{ENTER(detach_segment-mmap)
 	munmap(shared_segment->p, shared_segment->size);
 	return 0;
 }
 
 static size_t segment_type_size(void)
-{
+{ENTER(segment_type_size-mmap)
 	return sizeof(zend_shared_segment);
 }
 

@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | Zend Optimizer+                                                      |
+   | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
    | Copyright (c) 1998-2013 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -60,6 +60,9 @@ static char lockfile_name[sizeof(TMP_DIR) + sizeof(SEM_FILENAME_PREFIX) + 8];
 #endif
 
 static const zend_shared_memory_handler_entry handler_table[] = {
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+    { "malloc", &zend_alloc_malloc_handlers },
+#endif
 #ifdef USE_MMAP
 	{ "mmap", &zend_alloc_mmap_handlers },
 #endif
@@ -74,16 +77,25 @@ static const zend_shared_memory_handler_entry handler_table[] = {
 #endif
 	{ NULL, NULL}
 };
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+# define RETURN_IF_USING_FILE_CACHE(n) \
+    if (ZCG(use_file_cache)) {\
+        ZCG(locked) = n;\
+        return;\
+    }
+#else
+# define RETURN_IF_USING_FILE_CACHE(n) 
+#endif
 
 #ifndef ZEND_WIN32
 void zend_shared_alloc_create_lock(void)
-{
+{ENTER(zend_shared_alloc_create_lock)
 	int val;
 
 #ifdef ZTS
     zts_lock = tsrm_mutex_alloc();
 #endif
-
+    RETURN_IF_USING_FILE_CACHE(0);
 	sprintf(lockfile_name, "%s/%sXXXXXX", TMP_DIR, SEM_FILENAME_PREFIX);
 	lock_file = mkstemp(lockfile_name);
 	fchmod(lock_file, 0666);
@@ -100,12 +112,12 @@ void zend_shared_alloc_create_lock(void)
 #endif
 
 static void no_memory_bailout(int allocate_size, char *error)
-{
+{ENTER(no_memory_bailout)
 	zend_accel_error(ACCEL_LOG_FATAL, "Unable to allocate shared memory segment of %d bytes: %s: %s (%d)", allocate_size, error?error:"unknown", strerror(errno), errno );
 }
 
 static void copy_shared_segments(void *to, void *from, int count, int size)
-{
+{ENTER(copy_shared_segments)
 	zend_shared_segment **shared_segments_v = (zend_shared_segment **)to;
 	void *shared_segments_to_p = ((char *)to + count*(sizeof(void *)));
 	void *shared_segments_from_p = from;
@@ -120,7 +132,7 @@ static void copy_shared_segments(void *to, void *from, int count, int size)
 }
 
 static int zend_shared_alloc_try(const zend_shared_memory_handler_entry *he, int requested_size, zend_shared_segment ***shared_segments_p, int *shared_segments_count, char **error_in)
-{
+{ENTER(zend_shared_alloc_try)
 	int res;
 	g_shared_alloc_handler = he->handler;
 	g_shared_model = he->name;
@@ -149,14 +161,13 @@ static int zend_shared_alloc_try(const zend_shared_memory_handler_entry *he, int
 }
 
 int zend_shared_alloc_startup(int requested_size)
-{
+{ENTER(zend_shared_alloc_startup)
 	zend_shared_segment **tmp_shared_segments;
 	size_t shared_segments_array_size;
 	zend_smm_shared_globals tmp_shared_globals, *p_tmp_shared_globals;
 	char *error_in = NULL;
 	const zend_shared_memory_handler_entry *he;
 	int res = ALLOC_FAILURE;
-
 	TSRMLS_FETCH();
 
 	/* shared_free must be valid before we call zend_shared_alloc()
@@ -232,7 +243,7 @@ int zend_shared_alloc_startup(int requested_size)
 }
 
 void zend_shared_alloc_shutdown(void)
-{
+{NOENTER(zend_shared_alloc_shutdown)
 	zend_shared_segment **tmp_shared_segments;
 	size_t shared_segments_array_size;
 	zend_smm_shared_globals tmp_shared_globals;
@@ -252,20 +263,40 @@ void zend_shared_alloc_shutdown(void)
 	ZSMMG(shared_segments) = NULL;
 	g_shared_alloc_handler = NULL;
 #ifndef ZEND_WIN32
+    RETURN_IF_USING_FILE_CACHE(0);
 	close(lock_file);
 #endif
 }
 
+static size_t zend_shared_alloc_get_largest_free_block(void)
+{ENTER(zend_shared_alloc_get_largest_free_block)
+	int i;
+	size_t largest_block_size = 0;
+
+	for (i = 0; i < ZSMMG(shared_segments_count); i++) {
+		size_t block_size = ZSMMG(shared_segments)[i]->size - ZSMMG(shared_segments)[i]->pos;
+
+		if (block_size>largest_block_size) {
+			largest_block_size = block_size;
+		}
+	}
+	return largest_block_size;
+}
+
+#define MIN_FREE_MEMORY 64*1024
+
 #define SHARED_ALLOC_FAILED() do {		\
 		zend_accel_error(ACCEL_LOG_WARNING, "Not enough free shared space to allocate %ld bytes (%ld bytes free)", (long)size, (long)ZSMMG(shared_free)); \
-		ZSMMG(memory_exhausted) = 1;			\
-		zend_accel_schedule_restart(TSRMLS_C);	\
+		if (zend_shared_alloc_get_largest_free_block() < MIN_FREE_MEMORY) { \
+			ZSMMG(memory_exhausted) = 1; \
+			zend_accel_schedule_restart(ACCEL_RESTART_OOM TSRMLS_CC); \
+		} \
 	} while (0)
 
 void *zend_shared_alloc(size_t size)
-{
+{ENTER(zend_shared_alloc)
 	int i;
-	unsigned int block_size = size + sizeof(zend_shared_memory_block_header);
+	unsigned int block_size = ZEND_ALIGNED_SIZE(size);
 	TSRMLS_FETCH();
 
 #if 1
@@ -278,20 +309,21 @@ void *zend_shared_alloc(size_t size)
 		return NULL;
 	}
 	for (i = 0; i < ZSMMG(shared_segments_count); i++) {
-		if (ZSMMG(shared_segments)[i]->size - ZSMMG(shared_segments)[i]->pos >= block_size) { /* found a valid block */
-			zend_shared_memory_block_header *p = (zend_shared_memory_block_header *) (((char *) ZSMMG(shared_segments)[i]->p) + ZSMMG(shared_segments)[i]->pos);
-			int remainder = block_size % PLATFORM_ALIGNMENT;
-			void *retval;
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+		if (!ZSMMG(shared_segments)[i]->p && ZCG(use_file_cache) { /* Time to lazy alloc another segment */
+            if (!S_H(create_segments)(size, NULL, &i, NULL)) {
+                break;
+            }
+        }
+#endif
 
-			if (remainder != 0) {
-				size += PLATFORM_ALIGNMENT - remainder;
-				block_size += PLATFORM_ALIGNMENT - remainder;
-			}
+		if (ZSMMG(shared_segments)[i]->size - ZSMMG(shared_segments)[i]->pos >= block_size) { /* found a valid block */
+			void *retval = (void *) (((char *) ZSMMG(shared_segments)[i]->p) + ZSMMG(shared_segments)[i]->pos);
+
 			ZSMMG(shared_segments)[i]->pos += block_size;
 			ZSMMG(shared_free) -= block_size;
-			p->size = size;
-			retval = ((char *) p) + sizeof(zend_shared_memory_block_header);
-			memset(retval, 0, size);
+			memset(retval, 0, block_size);
+            DEBUG2(ALLOC, "%u bytes allocated at %p", (uint) size, retval);
 			return retval;
 		}
 	}
@@ -300,7 +332,7 @@ void *zend_shared_alloc(size_t size)
 }
 
 int zend_shared_memdup_size(void *source, size_t size)
-{
+{ENTER(zend_shared_memdup_size)
 	void **old_p;
 
 	if (zend_hash_index_find(&xlat_table, (ulong)source, (void **)&old_p) == SUCCESS) {
@@ -312,7 +344,7 @@ int zend_shared_memdup_size(void *source, size_t size)
 }
 
 void *_zend_shared_memdup(void *source, size_t size, zend_bool free_source TSRMLS_DC)
-{
+{ENTER(_zend_shared_memdup)
 	void **old_p, *retval;
 
 	if (zend_hash_index_find(&xlat_table, (ulong)source, (void **)&old_p) == SUCCESS) {
@@ -330,7 +362,8 @@ void *_zend_shared_memdup(void *source, size_t size, zend_bool free_source TSRML
 }
 
 void zend_shared_alloc_safe_unlock(TSRMLS_D)
-{
+{ENTER(zend_shared_alloc_safe_unlock)
+    RETURN_IF_USING_FILE_CACHE(0);
 	if (ZCG(locked)) {
 		zend_shared_alloc_unlock(TSRMLS_C);
 	}
@@ -343,13 +376,13 @@ static FLOCK_STRUCTURE(mem_write_unlock, F_UNLCK, SEEK_SET, 0, 1);
 #endif
 
 void zend_shared_alloc_lock(TSRMLS_D)
-{
+{ENTER(zend_shared_alloc_lock)
 #ifndef ZEND_WIN32
 
 #ifdef ZTS
 	tsrm_mutex_lock(zts_lock);
 #endif
-
+    RETURN_IF_USING_FILE_CACHE(1);
 #if 0
 	/* this will happen once per process, and will un-globalize mem_write_lock */
 	if (mem_write_lock.l_pid == -1) {
@@ -382,36 +415,37 @@ void zend_shared_alloc_lock(TSRMLS_D)
 }
 
 void zend_shared_alloc_unlock(TSRMLS_D)
-{
+{ENTER(zend_shared_alloc_unlock)
 	/* Destroy translation table */
 	zend_hash_destroy(&xlat_table);
 
 	ZCG(locked) = 0;
 
 #ifndef ZEND_WIN32
-	if (fcntl(lock_file, F_SETLK, &mem_write_unlock) == -1) {
-		zend_accel_error(ACCEL_LOG_ERROR, "Cannot remove lock - %s (%d)", strerror(errno), errno);
-	}
 #ifdef ZTS
 	tsrm_mutex_unlock(zts_lock);
 #endif
+    RETURN_IF_USING_FILE_CACHE(0);
+	if (fcntl(lock_file, F_SETLK, &mem_write_unlock) == -1) {
+		zend_accel_error(ACCEL_LOG_ERROR, "Cannot remove lock - %s (%d)", strerror(errno), errno);
+	}
 #else
 	zend_shared_alloc_unlock_win32();
 #endif
 }
 
 void zend_shared_alloc_clear_xlat_table(void)
-{
+{ENTER(zend_shared_alloc_clear_xlat_table)
 	zend_hash_clean(&xlat_table);
 }
 
 void zend_shared_alloc_register_xlat_entry(const void *old, const void *new)
-{
+{ENTER(zend_shared_alloc_register_xlat_entry)
 	zend_hash_index_update(&xlat_table, (ulong)old, (void*)&new, sizeof(void *), NULL);
 }
 
 void *zend_shared_alloc_get_xlat_entry(const void *old)
-{
+{ENTER(zend_shared_alloc_get_xlat_entry)
 	void **retval;
 
 	if (zend_hash_index_find(&xlat_table, (ulong)old, (void **)&retval) == FAILURE) {
@@ -421,27 +455,12 @@ void *zend_shared_alloc_get_xlat_entry(const void *old)
 }
 
 size_t zend_shared_alloc_get_free_memory(void)
-{
+{ENTER(zend_shared_alloc_get_free_memory)
 	return ZSMMG(shared_free);
 }
 
-size_t zend_shared_alloc_get_largest_free_block(void)
-{
-	int i;
-	size_t largest_block_size = 0;
-
-	for (i = 0; i < ZSMMG(shared_segments_count); i++) {
-		size_t block_size = ZSMMG(shared_segments)[i]->size - ZSMMG(shared_segments)[i]->pos;
-
-		if (block_size>largest_block_size) {
-			largest_block_size = block_size;
-		}
-	}
-	return largest_block_size;
-}
-
 void zend_shared_alloc_save_state(void)
-{
+{ENTER(zend_shared_alloc_save_state)
 	int i;
 
 	for (i = 0; i < ZSMMG(shared_segments_count); i++) {
@@ -451,7 +470,7 @@ void zend_shared_alloc_save_state(void)
 }
 
 void zend_shared_alloc_restore_state(void)
-{
+{ENTER(zend_shared_alloc_restore_state)
 	int i;
 
 	for (i = 0; i < ZSMMG(shared_segments_count); i++) {
@@ -463,12 +482,12 @@ void zend_shared_alloc_restore_state(void)
 }
 
 const char *zend_accel_get_shared_model(void)
-{
+{ENTER(zend_accel_get_shared_model)
 	return g_shared_model;
 }
 
 void zend_accel_shared_protect(int mode TSRMLS_DC)
-{
+{ENTER(zend_accel_shared_protect)
 #ifdef HAVE_MPROTECT
 	int i;
 
