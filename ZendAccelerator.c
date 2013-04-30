@@ -91,6 +91,9 @@ zend_accel_globals accel_globals;
 #else
 int accel_globals_id;
 #endif
+#ifdef ACCEL_DEBUG
+int accel_directives_debug_flags=0;
+#endif
 
 /* Points to the structure shared across all PHP processes */
 zend_accel_shared_globals *accel_shared_globals = NULL;
@@ -100,7 +103,6 @@ zend_bool accel_startup_ok = 0;
 static char *zps_failure_reason = NULL;
 char *zps_api_failure_reason = NULL;
 
-static int accel_deferred_startup(TSRMLS_D);
 static zend_op_array *(*accelerator_orig_compile_file)(zend_file_handle *file_handle, int type TSRMLS_DC);
 static int (*accelerator_orig_zend_stream_open_function)(const char *filename, zend_file_handle *handle  TSRMLS_DC);
 #if ZEND_EXTENSION_API_NO >= PHP_5_3_X_API_NO
@@ -113,6 +115,36 @@ static ZEND_INI_MH((*orig_include_path_on_modify)) = NULL;
 # define INCREMENT(v) InterlockedIncrement(&ZCSG(v))
 # define DECREMENT(v) InterlockedDecrement(&ZCSG(v))
 # define LOCKVAL(v)   (ZCSG(v))
+#endif
+
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+#define FILE_CACHE_WRITE(bucket) if (ZSMMG(use_file_cache)) { \
+    zend_accel_save_module_to_file(bucket TSRMLS_CC); \
+    }
+#define HASH_FIND(k, kl) zend_accel_file_cache_hash_find(k, kl TSRMLS_CC)
+#define HASH_FIND_ENTRY(k, kl)	zend_accel_file_cache_hash_find_entry(k, kl TSRMLS_CC)
+static inline zend_accel_hash_entry* zend_accel_file_cache_hash_find_entry(char *k, zend_uint kl TSRMLS_DC)
+{
+    zend_accel_hash_entry *bucket = zend_accel_hash_find_entry(&ZCSG(hash), k, kl);
+    if (bucket && bucket->data && ZSMMG(use_file_cache)) {
+        /* if the bucket points to the file_cached_scripts vector then the script hasn't been loaded
+           from the file cache yet */
+        zend_uint ndx = (zend_file_cached_script *)(bucket->data) - ZFCSG(file_cached_scripts);
+        if (ndx < ZFCSG(file_cached_script_count)) {
+            zend_accel_load_module_from_file(ndx, bucket TSRMLS_CC);
+        }
+    }
+    return bucket;   
+}
+static inline void* zend_accel_file_cache_hash_find(char *k, zend_uint kl TSRMLS_DC)
+{
+    zend_accel_hash_entry *bucket = zend_accel_file_cache_hash_find_entry(k, kl TSRMLS_CC);
+    return bucket ? bucket->data : NULL; 		
+}
+#else
+#define FILE_CACHE_WRITE(bucket,script)
+#define HASH_FIND(k, kl) zend_accel_hash_find(&ZCSG(hash), k, kl);
+#define HASH_FIND_ENTRY(k, kl)	zend_accel_hash_find_entry(&ZCSG(hash), k, kl);
 #endif
 
 #ifdef ZEND_WIN32
@@ -1022,6 +1054,7 @@ char *accel_make_persistent_key_ex(zend_file_handle *file_handle, int path_lengt
     }
 
 	*key_len = ZCG(key_len) = key_length;
+    DEBUG3(KEY, "Generated persistant key %*.*s",key_length,key_length,ZCG(key));
 	return ZCG(key);
 }
 
@@ -1072,6 +1105,7 @@ static zend_persistent_script *cache_script_in_shared_memory(zend_persistent_scr
 	/* Check if we still need to put the file into the cache (may be it was
 	 * already stored by another process. This final check is done under
 	 * exclusive lock) */
+// TODO: Needs to be FIND...  ????
 	bucket = zend_accel_hash_find_entry(&ZCSG(hash), new_persistent_script->full_path, new_persistent_script->full_path_len + 1);
 	if (bucket) {
 		zend_persistent_script *existing_persistent_script = (zend_persistent_script *)bucket->data;
@@ -1130,6 +1164,7 @@ static zend_persistent_script *cache_script_in_shared_memory(zend_persistent_scr
 	}
 
 	new_persistent_script->dynamic_members.memory_consumption = ZEND_ALIGNED_SIZE(new_persistent_script->size);
+    FILE_CACHE_WRITE(bucket);
 
 	zend_shared_alloc_unlock(TSRMLS_C);
 
@@ -1200,8 +1235,7 @@ static zend_persistent_script *compile_and_cache_file(zend_file_handle *file_han
 #if ZEND_EXTENSION_API_NO >= PHP_5_3_X_API_NO
 	zend_uint orig_compiler_options = 0;
 #endif
-
-    /* Try to open file */
+   /* Try to open file */
     if (file_handle->type == ZEND_HANDLE_FILENAME) {
         if (accelerator_orig_zend_stream_open_function(file_handle->filename, file_handle TSRMLS_CC) == SUCCESS) {
         	/* key may be changed by zend_stream_open_function() */
@@ -1330,7 +1364,6 @@ static zend_persistent_script *compile_and_cache_file(zend_file_handle *file_han
 	*/
 	zend_accel_move_user_functions(&ZCG(function_table), &new_persistent_script->function_table TSRMLS_CC);
 	new_persistent_script->main_op_array = *op_array;
-
 	efree(op_array); /* we have valid persistent_script, so it's safe to free op_array */
 
     /* Fill in the ping_auto_globals_mask for the new script. If jit for auto globals is enabled we
@@ -1426,7 +1459,7 @@ static zend_op_array *persistent_compile_file(zend_file_handle *file_handle, int
 		if ((key = accel_make_persistent_key(file_handle, &key_length TSRMLS_CC)) == NULL) {
 			return accelerator_orig_compile_file(file_handle, type TSRMLS_CC);
 		}
-		persistent_script = zend_accel_hash_find(&ZCSG(hash), key, key_length + 1);
+		persistent_script = HASH_FIND(key, key_length + 1);
 		if (!persistent_script) {
 			/* try to find cached script by full real path */
 			zend_accel_hash_entry *bucket;
@@ -1456,8 +1489,7 @@ static zend_op_array *persistent_compile_file(zend_file_handle *file_handle, int
 		    }
 
 			if (file_handle->opened_path &&
-			    (bucket = zend_accel_hash_find_entry(&ZCSG(hash), file_handle->opened_path, strlen(file_handle->opened_path) + 1)) != NULL) {
-
+			    (bucket = HASH_FIND_ENTRY(file_handle->opened_path, strlen(file_handle->opened_path) + 1)) != NULL) {
 				persistent_script = (zend_persistent_script *)bucket->data;
 				if (!ZCG(accel_directives).revalidate_path &&
 				    !persistent_script->corrupted) {
@@ -1468,7 +1500,7 @@ static zend_op_array *persistent_compile_file(zend_file_handle *file_handle, int
 			    	SHM_PROTECT();
 				}
 			}
-		}
+		}    
 	}
 
 	/* clear cache */
@@ -1729,7 +1761,7 @@ static int persistent_stream_open_function(const char *filename, zend_file_handl
 
 			    /* Check if requested file already cached (by full name) */
 			    if (IS_ABSOLUTE_PATH(filename, filename_len) &&
-				    (persistent_script = zend_accel_hash_find(&ZCSG(hash), (char*)filename, filename_len + 1)) != NULL &&
+				    (persistent_script = HASH_FIND((char*)filename, filename_len + 1)) != NULL &&
 				    !persistent_script->corrupted) {
 
 					handle->opened_path = estrndup(persistent_script->full_path, persistent_script->full_path_len);
@@ -1745,7 +1777,7 @@ static int persistent_stream_open_function(const char *filename, zend_file_handl
 				key = accel_make_persistent_key_ex(handle, filename_len, &key_length TSRMLS_CC);
 				if (!ZCG(accel_directives).revalidate_path &&
 				    key &&
-					(persistent_script = zend_accel_hash_find(&ZCSG(hash), key, key_length + 1)) != NULL &&
+					(persistent_script = HASH_FIND(key, key_length + 1)) != NULL &&
 				    !persistent_script->corrupted) {
 
 					handle->opened_path = estrndup(persistent_script->full_path, persistent_script->full_path_len);
@@ -1760,7 +1792,7 @@ static int persistent_stream_open_function(const char *filename, zend_file_handl
 
 			    /* Check if requested file already cached (by real name) */
 				if (resolved_path &&
-				    (bucket = zend_accel_hash_find_entry(&ZCSG(hash), resolved_path, strlen(resolved_path) + 1)) != NULL) {
+				    (bucket = HASH_FIND_ENTRY(resolved_path, strlen(resolved_path) + 1)) != NULL) {
 
 					persistent_script = (zend_persistent_script *)bucket->data;
 					if (persistent_script && !persistent_script->corrupted) {
@@ -1890,7 +1922,7 @@ static char* persistent_zend_resolve_path(const char *filename, int filename_len
 		    /* Check if requested file already cached (by full name) */
 		    if ((IS_ABSOLUTE_PATH(filename, filename_len) ||
 		         is_stream_path(filename)) &&
-			    (bucket = zend_accel_hash_find_entry(&ZCSG(hash), (char*)filename, filename_len + 1)) != NULL) {
+			    (bucket = HASH_FIND_ENTRY((char*)filename, filename_len + 1)) != NULL) {
 				persistent_script = (zend_persistent_script *)bucket->data;
 				if (persistent_script && !persistent_script->corrupted) {
 					memcpy(ZCG(key), persistent_script->full_path, persistent_script->full_path_len + 1);
@@ -1908,7 +1940,7 @@ static char* persistent_zend_resolve_path(const char *filename, int filename_len
 			key = accel_make_persistent_key_ex(&handle, filename_len, &key_length TSRMLS_CC);
 			if (!ZCG(accel_directives).revalidate_path &&
 			    key &&
-				(persistent_script = zend_accel_hash_find(&ZCSG(hash), key, key_length + 1)) != NULL &&
+				(persistent_script = HASH_FIND(key, key_length + 1)) != NULL &&
 			    !persistent_script->corrupted) {
 
 				/* we have persistent script */
@@ -1922,7 +1954,8 @@ static char* persistent_zend_resolve_path(const char *filename, int filename_len
 
 		    /* Check if requested file already cached (by real path) */
 			if (resolved_path &&
-			    (bucket = zend_accel_hash_find_entry(&ZCSG(hash), resolved_path, strlen(resolved_path) + 1)) != NULL) {
+			    (bucket = HASH_FIND_ENTRY(resolved_path, strlen(resolved_path) + 1)) != NULL) {
+
 				persistent_script = (zend_persistent_script *)bucket->data;
 
 				if (persistent_script && !persistent_script->corrupted) {
@@ -2046,6 +2079,10 @@ static void accel_activate(void)
 	}
 
 	ZCG(cwd) = NULL;
+
+    if (!zend_accel_open_file_cache(TSRMLS_C)){
+        ZSMMG(use_file_cache) = 0;
+    }
 
 	SHM_PROTECT();
 }
@@ -2235,17 +2272,11 @@ static void accel_deactivate(void)
 	if (!ZCG(enabled) || !accel_startup_ok) {
 		return;
 	}
-#ifdef OPCACHE_ENABLE_FILE_CACHE
-    /* In the case of the CLI and CGI SAPIs no forking of the PHP process takes place and  
-       accel_deactivate occurs immediately before accel_shutdown.  However, by doing the save here,
-       all the normal PHP services are still available which makes coding the save easier. */
-    if (ZCG(use_file_cache)) {
-        zend_accel_update_file_cache(ZSMMG(shared_segments));
-    }
-#endif
 	zend_shared_alloc_safe_unlock(TSRMLS_C); /* be sure we didn't leave cache locked */
 	accel_unlock_all(TSRMLS_C);
 	ZCG(counted) = 0;
+
+    zend_accel_close_file_cache(TSRMLS_C);
 
 #if !ZEND_DEBUG
 	if (ZCG(accel_directives).fast_shutdown) {
@@ -2406,7 +2437,6 @@ static int accel_startup(zend_extension *extension)
 #else
 	accel_globals_ctor(&accel_globals);
 #endif
-
 #ifdef ZEND_WIN32
 	_setmaxstdio(2048); /* The default configuration is limited to 512 stdio files */
 #endif
@@ -2428,16 +2458,13 @@ static int accel_startup(zend_extension *extension)
 		}
 		return SUCCESS;
 	}
+#ifdef ACCEL_DEBUG
+    accel_directives_debug_flags = ZCG(accel_directives.debug_flags);
+#endif
 
 	if (ZCG(enabled) == 0) {
 		return SUCCESS ;
 	}
-#ifdef OPCACHE_ENABLE_FILE_CACHE
-    if (strcmp(sapi_module.name, "cli") == 0 ||
-        strcmp(sapi_module.name, "cgi-fcgi") == 0) {
-        ZCG(use_file_cache) = 1;
-    }
-#endif
 /********************************************/
 /* End of non-SHM dependent initializations */
 /********************************************/

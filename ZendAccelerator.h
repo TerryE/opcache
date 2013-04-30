@@ -160,9 +160,9 @@ extern int lock_file;
 
 #ifdef __ACCEL_CLI_PERSISTANCE__
 #define OPCACHE_ENABLE_FILE_CACHE
+#include "zend_accelerator_file_cache.h"
 #endif
-
-
+    
 #if ZEND_WIN32
 typedef unsigned __int64 accel_time_t;
 #else
@@ -203,8 +203,12 @@ typedef struct _zend_persistent_script {
 		unsigned int memory_consumption;
 		unsigned int checksum;
 		time_t       revalidate;
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+        uint         file_cache_index;
+#endif
 	} dynamic_members;
 } zend_persistent_script;
+
 
 typedef struct _zend_accel_directives {
 	long           memory_consumption;
@@ -242,7 +246,7 @@ typedef struct _zend_accel_directives {
 #endif
 #ifdef OPCACHE_ENABLE_FILE_CACHE
     char          *cache_pattern;     /* TE addition */
-    char          *cache_file; /* TE addition */
+    char          *cache_file;        /* TE addition */
 #endif
 } zend_accel_directives;
 
@@ -272,10 +276,6 @@ typedef struct _zend_accel_globals {
 	int                     key_len;
 	char                    key[MAXPATHLEN * 8];
     char                   *cache_path;
-#ifdef OPCACHE_ENABLE_FILE_CACHE
-    int                     new_sma_alloc_count;
-    zend_bool               use_file_cache;
-#endif
 } zend_accel_globals;
 
 typedef struct _zend_accel_shared_globals {
@@ -316,6 +316,9 @@ typedef struct _zend_accel_shared_globals {
 		Bucket  *pListTail;
 		char    *top;
 	} interned_strings_saved_state;
+#endif
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+    zend_accel_file_cache_globals fcg;
 #endif
 } zend_accel_shared_globals;
 

@@ -20,6 +20,7 @@
 */
 
 #include "zend_shared_alloc.h"
+#include "main/SAPI.h"
 
 #ifdef OPCACHE_ENABLE_FILE_CACHE
 #include <sys/types.h>
@@ -27,7 +28,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
-#include "SAPI.h"
 
 #if defined(MAP_ANON) && !defined(MAP_ANONYMOUS)
 # define MAP_ANONYMOUS MAP_ANON
@@ -38,26 +38,25 @@
 # define MAX(x, y) ((x) > (y)? (x) : (y))
 #endif
 
-#define SEG_ALLOC_SIZE 8*1024*1024
+#define SEG_ALLOC_SIZE (8*1024*1024)
 /* The malloc allocator uses a lazy allocation strategy to allocate its segments.  create_segments()
    may be called multiple times.  The first time it acts much as the other allocators, but only 
-   mallocing one segment of at most SEG_ALLOC_SIZE.  On each subsequent call (shared_segments_p==NULL)
+   mallocing one segment of at most SEG_ALLOC_SIZE.  On each subsequent call (segments_p==NULL)
    it will malloc and add an additional segment. */
-static int create_segments(size_t size, zend_shared_segment ***shared_segments_p, int *segments_count_or_ndx, char **error_in)
+static int create_segments(size_t size, zend_shared_segment ***segments_p, int *segments_count_or_ndx, char **error_in)
 {ENTER(create_segments-malloc)
     size_t segments_allocation, segment_size, block_size;
-	zend_shared_segment *segment, **segment_vec;
+	zend_shared_segment *segment, **segments_vec;
     int segments_count;
-    TSRMLS_FETCH();
 
-    if (shared_segments_p) {
-        size_t request_size = size;
-        int *segments_count = segments_count_or_ndx;
-        int i;
+    if (ZSMMG(use_file_cache)==0) {
+        size_t requested_size    = size;
+        int segments_count, i;
 
-        if (!ZCG(use_file_cache)) {
+        if (strcmp(sapi_module.name, "cli") != 0 && strcmp(sapi_module.name, "cgi-fcgi") != 0) {
             return ALLOC_FAILURE;
         }
+
         segments_count = (requested_size+SEG_ALLOC_SIZE-1) / SEG_ALLOC_SIZE;
         segments_vec = (zend_shared_segment **) calloc(segments_count, sizeof(zend_shared_segment) + sizeof(void *));
         if (!segments_vec) {
@@ -65,9 +64,9 @@ static int create_segments(size_t size, zend_shared_segment ***shared_segments_p
 	        return ALLOC_FAILURE;
         }
 
-        segment = (zend_shared_segment *) (segment_vec + segments_count);
+        segment = (zend_shared_segment *) (segments_vec + segments_count);
         for (i = 0; i<segments_count; i++) {
-            segment_vec[i] = segment + i;
+            segments_vec[i] = segment + i;
         }
 
         segment_size = MIN(requested_size, SEG_ALLOC_SIZE);
@@ -81,9 +80,9 @@ static int create_segments(size_t size, zend_shared_segment ***shared_segments_p
 	        segment[1].size = requested_size - segment_size;
         }
 
-        *shared_segments_p = segment_vec;
-        *shared_segments_count = segments_count;
-    } else {     
+        *segments_p = segments_vec;
+        *segments_count_or_ndx = segments_count;        
+    } else { /* ZSMMG(use_file_cache) == 1 */
         size_t minimum_size = size;
         size_t remaining;
         int next_ndx = *segments_count_or_ndx;

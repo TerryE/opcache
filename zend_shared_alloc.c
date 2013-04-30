@@ -22,6 +22,7 @@
 #include <errno.h>
 #include "ZendAccelerator.h"
 #include "zend_shared_alloc.h"
+#include "main/SAPI.h"
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif
@@ -60,9 +61,6 @@ static char lockfile_name[sizeof(TMP_DIR) + sizeof(SEM_FILENAME_PREFIX) + 8];
 #endif
 
 static const zend_shared_memory_handler_entry handler_table[] = {
-#ifdef OPCACHE_ENABLE_FILE_CACHE
-    { "malloc", &zend_alloc_malloc_handlers },
-#endif
 #ifdef USE_MMAP
 	{ "mmap", &zend_alloc_mmap_handlers },
 #endif
@@ -77,15 +75,6 @@ static const zend_shared_memory_handler_entry handler_table[] = {
 #endif
 	{ NULL, NULL}
 };
-#ifdef OPCACHE_ENABLE_FILE_CACHE
-# define RETURN_IF_USING_FILE_CACHE(n) \
-    if (ZCG(use_file_cache)) {\
-        ZCG(locked) = n;\
-        return;\
-    }
-#else
-# define RETURN_IF_USING_FILE_CACHE(n) 
-#endif
 
 #ifndef ZEND_WIN32
 void zend_shared_alloc_create_lock(void)
@@ -95,7 +84,6 @@ void zend_shared_alloc_create_lock(void)
 #ifdef ZTS
     zts_lock = tsrm_mutex_alloc();
 #endif
-    RETURN_IF_USING_FILE_CACHE(0);
 	sprintf(lockfile_name, "%s/%sXXXXXX", TMP_DIR, SEM_FILENAME_PREFIX);
 	lock_file = mkstemp(lockfile_name);
 	fchmod(lock_file, 0666);
@@ -149,7 +137,7 @@ static int zend_shared_alloc_try(const zend_shared_memory_handler_entry *he, int
 		int i;
 		/* cleanup */
 		for (i = 0; i < *shared_segments_count; i++) {
-			if ((*shared_segments_p)[i]->p && (int)(*shared_segments_p)[i]->p != -1) {
+			if ((*shared_segments_p)[i]->p && (size_t)(*shared_segments_p)[i]->p != (size_t) -1) {
 				S_H(detach_segment)((*shared_segments_p)[i]);
 			}
 		}
@@ -168,15 +156,54 @@ int zend_shared_alloc_startup(int requested_size)
 	char *error_in = NULL;
 	const zend_shared_memory_handler_entry *he;
 	int res = ALLOC_FAILURE;
+
 	TSRMLS_FETCH();
 
-	/* shared_free must be valid before we call zend_shared_alloc()
-	 * - make it temporarily point to a local variable
-	 */
 	smm_shared_globals = &tmp_shared_globals;
 	ZSMMG(shared_free) = requested_size; /* goes to tmp_shared_globals.shared_free */
 
 	zend_shared_alloc_create_lock();
+
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+    if (strcmp(sapi_module.name, "cli") == 0 || strcmp(sapi_module.name, "cgi-fcgi") == 0) {
+        /* In the case of the CLI and GCI SAPIs with the file cache enabled, its a case of try to 
+           use the malloc handler or bust.  This path also mirrors the technique of using a tmp 
+           smm shared globals structure for consistency with the other allocators -- (though IMO, it 
+           would seem at lot easier to leave initialising the smm shared globals and segment vector
+           + array to the allocator) */
+        static const zend_shared_memory_handler_entry he = {"malloc", &zend_alloc_malloc_handlers};
+
+        ZSMMG(use_file_cache)= 0;
+        res = zend_shared_alloc_try(&he, requested_size, &ZSMMG(shared_segments), &ZSMMG(shared_segments_count), &error_in);
+          
+        if (res==ALLOC_SUCCESS) {
+	        /* move shared_segments and shared_free to shared memory */
+	        ZCG(locked) = 1;
+	        p_tmp_shared_globals = (zend_smm_shared_globals *) zend_shared_alloc(sizeof(zend_smm_shared_globals));
+        	shared_segments_array_size = ZSMMG(shared_segments_count) * S_H(segment_type_size)();
+	        tmp_shared_segments = zend_shared_alloc(shared_segments_array_size + ZSMMG(shared_segments_count) * sizeof(void *));
+	        copy_shared_segments(tmp_shared_segments, ZSMMG(shared_segments)[0], ZSMMG(shared_segments_count), S_H(segment_type_size)());
+	        *p_tmp_shared_globals = tmp_shared_globals;
+	        smm_shared_globals = p_tmp_shared_globals;
+
+	        free(ZSMMG(shared_segments));
+	        ZSMMG(shared_segments) = tmp_shared_segments;
+
+	        ZSMMG(shared_memory_state).positions = (int *)zend_shared_alloc(sizeof(int) * ZSMMG(shared_segments_count));
+            ZSMMG(use_file_cache) = 1;
+	        ZCG(locked) = 0;
+            return ALLOC_SUCCESS;
+        } else {
+		    smm_shared_globals = NULL;
+    		no_memory_bailout(requested_size, error_in);
+		    return ALLOC_FAILURE;
+        } 
+        /* no fall through ! */
+    }
+#endif
+    /* shared_free must be valid before we call zend_shared_alloc()
+	 * - make it temporarily point to a local variable
+	 */
 
 	if (ZCG(accel_directives).memory_model && ZCG(accel_directives).memory_model[0]) {
 		char *model = ZCG(accel_directives).memory_model;
@@ -263,7 +290,6 @@ void zend_shared_alloc_shutdown(void)
 	ZSMMG(shared_segments) = NULL;
 	g_shared_alloc_handler = NULL;
 #ifndef ZEND_WIN32
-    RETURN_IF_USING_FILE_CACHE(0);
 	close(lock_file);
 #endif
 }
@@ -310,7 +336,7 @@ void *zend_shared_alloc(size_t size)
 	}
 	for (i = 0; i < ZSMMG(shared_segments_count); i++) {
 #ifdef OPCACHE_ENABLE_FILE_CACHE
-		if (!ZSMMG(shared_segments)[i]->p && ZCG(use_file_cache) { /* Time to lazy alloc another segment */
+		if (!ZSMMG(shared_segments)[i]->p && ZSMMG(use_file_cache)) { /* Time to lazy alloc another segment */
             if (!S_H(create_segments)(size, NULL, &i, NULL)) {
                 break;
             }
@@ -323,7 +349,8 @@ void *zend_shared_alloc(size_t size)
 			ZSMMG(shared_segments)[i]->pos += block_size;
 			ZSMMG(shared_free) -= block_size;
 			memset(retval, 0, block_size);
-            DEBUG2(ALLOC, "%u bytes allocated at %p", (uint) size, retval);
+            DEBUG3(ALLOC, "%u bytes allocated at %p(%08lx)", (uint) size, retval,
+                          ZSMMG(shared_segments)[i]->pos - block_size);
 			return retval;
 		}
 	}
@@ -363,7 +390,6 @@ void *_zend_shared_memdup(void *source, size_t size, zend_bool free_source TSRML
 
 void zend_shared_alloc_safe_unlock(TSRMLS_D)
 {ENTER(zend_shared_alloc_safe_unlock)
-    RETURN_IF_USING_FILE_CACHE(0);
 	if (ZCG(locked)) {
 		zend_shared_alloc_unlock(TSRMLS_C);
 	}
@@ -382,7 +408,6 @@ void zend_shared_alloc_lock(TSRMLS_D)
 #ifdef ZTS
 	tsrm_mutex_lock(zts_lock);
 #endif
-    RETURN_IF_USING_FILE_CACHE(1);
 #if 0
 	/* this will happen once per process, and will un-globalize mem_write_lock */
 	if (mem_write_lock.l_pid == -1) {
@@ -425,7 +450,6 @@ void zend_shared_alloc_unlock(TSRMLS_D)
 #ifdef ZTS
 	tsrm_mutex_unlock(zts_lock);
 #endif
-    RETURN_IF_USING_FILE_CACHE(0);
 	if (fcntl(lock_file, F_SETLK, &mem_write_unlock) == -1) {
 		zend_accel_error(ACCEL_LOG_ERROR, "Cannot remove lock - %s (%d)", strerror(errno), errno);
 	}

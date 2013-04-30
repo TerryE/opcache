@@ -396,6 +396,7 @@ int main() { return 0; }
 	zend_shared_alloc.c \
 	zend_accelerator_util_funcs.c \
 	shared_alloc_shm.c \
+	shared_alloc_malloc.c \
 	shared_alloc_mmap.c \
 	shared_alloc_posix.c \
     shared_file_utils.c \

@@ -109,6 +109,11 @@ typedef struct _zend_smm_shared_globals {
     zend_shared_memory_state   shared_memory_state;
 	/* Pointer to the application's shared data structures */
 	void                      *app_shared_globals;
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+    /* Flag to indicate malloc + file cache being used */
+    zend_bool                  use_file_cache;
+#endif  
+
 } zend_smm_shared_globals;
 
 extern zend_smm_shared_globals *smm_shared_globals;
@@ -160,6 +165,10 @@ const char *zend_accel_get_shared_model(void);
 /* memory write protection */
 void zend_accel_shared_protect(int mode TSRMLS_DC);
 
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+extern zend_shared_memory_handlers zend_alloc_malloc_handlers;
+#endif
+
 #ifdef USE_MMAP
 extern zend_shared_memory_handlers zend_alloc_mmap_handlers;
 #endif
@@ -177,12 +186,6 @@ extern zend_shared_memory_handlers zend_alloc_win32_handlers;
 void zend_shared_alloc_create_lock(void);
 void zend_shared_alloc_lock_win32(void);
 void zend_shared_alloc_unlock_win32(void);
-#endif
-
-#ifdef OPCACHE_ENABLE_FILE_CACHE
-extern int zend_shared_load_sma(zend_shared_segment *shared_segment);
-extern int zend_shared_save_sma(zend_shared_segment *shared_segment);
-extern void zend_accel_clear_saved_sma(void);
 #endif
 
 #endif /* ZEND_SHARED_ALLOC_H */

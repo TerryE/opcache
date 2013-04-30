@@ -280,7 +280,7 @@ static int filename_is_in_cache(char *filename, int filename_len TSRMLS_DC)
 
 	handle.filename = filename;
 	handle.type = ZEND_HANDLE_FILENAME;
-
+    
 	if (IS_ABSOLUTE_PATH(filename, filename_len)) {
 		persistent_script = zend_accel_hash_find(&ZCSG(hash), filename, filename_len + 1);
 		if (persistent_script) {
@@ -500,7 +500,7 @@ static zval* accelerator_get_scripts(TSRMLS_D)
 /* {{{ proto array accelerator_get_status([bool fetch_scripts])
    Obtain statistics information regarding code acceleration */
 static ZEND_FUNCTION(opcache_get_status)
-{ENTER(opcache_get_status))
+{ENTER(opcache_get_status)
  	long reqs;
 	zval *memory_usage,*statistics,*scripts;
 	zend_bool fetch_scripts = 1;

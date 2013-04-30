@@ -107,7 +107,7 @@ void free_persistent_script(zend_persistent_script *persistent_script, int destr
 }
 
 static int is_not_internal_function(zend_function *function)
-{ENTER(is_not_internal_function)
+{NOENTER(is_not_internal_function)
 	return(function->type != ZEND_INTERNAL_FUNCTION);
 }
 
@@ -121,7 +121,7 @@ void zend_accel_free_user_functions(HashTable *ht TSRMLS_DC)
 }
 
 static int move_user_function(zend_function *function TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key)
-{ENTER(move_user_function)
+{NOENTER(move_user_function)
 	HashTable *function_table = va_arg(args, HashTable *);
 	(void)num_args; /* keep the compiler happy */
 

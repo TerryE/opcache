@@ -36,12 +36,12 @@ void zend_accel_error(int type, const char *format, ...);
 # define ACCEL_DEBUG 1
 #endif
 
-# define ACCEL_DBG_ALLOC  (1<<0)  /* Storage Allocation */
-# define ACCEL_DBG_RELO   (1<<1)  /* Relocation outside pool */
-# define ACCEL_DBG_RELC   (1<<2)  /* Relocation Address check */
+# define ACCEL_DBG_ALLOC  (1<<0) /* Storage Allocation */
+# define ACCEL_DBG_KEY    (1<<1)  /* Key resolution */
+# define ACCEL_DBG_HASH   (1<<2)  /* Hash Functions */
 # define ACCEL_DBG_RELR   (1<<3)  /* Missed relocation report */
 # define ACCEL_DBG_LOAD   (1<<4)  /* Load/Unload Info */
-# define ACCEL_DBG_ENTER  (1<<5)  /* Print out function enty audit */
+# define ACCEL_DBG_ENTER  (1<<5)  /* Print out function entry audit */
 # define ACCEL_DBG_COUNTS (1<<6)  /* Print out function summary counts */
 # define ACCEL_DBG_FILES  (1<<7)  /* Print out any file requests */
 # define ACCEL_DBG_INTN   (1<<8)  /* Duplicate intern allocation */
@@ -49,9 +49,10 @@ void zend_accel_error(int type, const char *format, ...);
 # define ACCEL_DBG_LOG_OPCODES (1<<10)  /* Opcode loggin */
 
 #ifdef ACCEL_DEBUG
-# define ENTER(s) int dummy_to_be_ignored = accel_debug_enter(#s);
+extern int accel_directives_debug_flags;
+#define ENTER(s) int dummy_to_be_ignored = accel_debug_enter(#s);
 extern int ACCEL_debug_enter(char *s);
-#define IF_DEBUG(flg) if (ZCG(accel_directives.debug_flags) & ACCEL_DBG_ ## flg)
+#define IF_DEBUG(flg) if (accel_directives_debug_flags & ACCEL_DBG_ ## flg)
 #define DEBUG0(flg,fmt) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt)
 #define DEBUG1(flg,fmt,a1) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt, a1)
 #define DEBUG2(flg,fmt,a1,a2) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2)
