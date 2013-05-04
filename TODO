@@ -5,8 +5,9 @@ issues and I have only really done main path coverage.  I have released it at th
 for feedback from the OPcache developers so that I can align what I am doing to their input before
 even suggesting progress towards a merge.  
 
-I still have to shake down:
+I still have to implement / shake down:
 
+* Explicit relocation ptr tagging
 * Bare vs. PHP or Zend wrapped I/O for the file cache
 * Script invalidation and resource exhaustion paths
 * Compression alternatives
