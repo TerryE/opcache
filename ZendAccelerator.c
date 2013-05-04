@@ -16,6 +16,7 @@
    |          Zeev Suraski <zeev@zend.com>                                |
    |          Stanislav Malyshev <stas@zend.com>                          |
    |          Dmitry Stogov <dmitry@zend.com>                             |
+   |          Terry Ellison<terry@ellisons.org.uk>                        |
    +----------------------------------------------------------------------+
 */
 
@@ -540,10 +541,12 @@ static inline int accel_restart_is_active(TSRMLS_D)
 static inline void accel_activate_add(TSRMLS_D)
 {ENTER(accel_activate_add)
 #ifdef ZEND_WIN32
+    RETURN_IF_MLC_MODE();
 	INCREMENT(mem_usage);
 #else
 	static const FLOCK_STRUCTURE(mem_usage_lock, F_RDLCK, SEEK_SET, 1, 1);
 
+    RETURN_IF_MLC_MODE();
 	if (fcntl(lock_file, F_SETLK, &mem_usage_lock) == -1) {
 		zend_accel_error(ACCEL_LOG_DEBUG, "UpdateC(+1):  %s (%d)", strerror(errno), errno);
 	}
@@ -555,12 +558,14 @@ static inline void accel_deactivate_sub(TSRMLS_D)
 {ENTER(accel_deactivate_sub)
 #ifdef ZEND_WIN32
 	if (ZCG(counted)) {
-		DECREMENT(mem_usage);
 		ZCG(counted) = 0;
+        RETURN_IF_MLC_MODE();
+		DECREMENT(mem_usage);
 	}
 #else
 	static const FLOCK_STRUCTURE(mem_usage_unlock, F_UNLCK, SEEK_SET, 1, 1);
 
+    RETURN_IF_MLC_MODE();
 	if (fcntl(lock_file, F_SETLK, &mem_usage_unlock) == -1) {
 		zend_accel_error(ACCEL_LOG_DEBUG, "UpdateC(-1):  %s (%d)", strerror(errno), errno);
 	}
@@ -570,10 +575,12 @@ static inline void accel_deactivate_sub(TSRMLS_D)
 static inline void accel_unlock_all(TSRMLS_D)
 {ENTER(accel_unlock_all)
 #ifdef ZEND_WIN32
+    RETURN_IF_MLC_MODE();
 	accel_deactivate_sub(TSRMLS_C);
 #else
 	static const FLOCK_STRUCTURE(mem_usage_unlock_all, F_UNLCK, SEEK_SET, 0, 0);
 
+    RETURN_IF_MLC_MODE();
 	if (fcntl(lock_file, F_SETLK, &mem_usage_unlock_all) == -1) {
 		zend_accel_error(ACCEL_LOG_DEBUG, "UnlockAll:  %s (%d)", strerror(errno), errno);
 	}
@@ -2041,7 +2048,6 @@ static void accel_activate(void)
 						break;
 				}
 				accel_restart_enter(TSRMLS_C);
-
 				zend_reset_cache_vars(TSRMLS_C);
 				zend_accel_hash_clean(&ZCSG(hash));
 
@@ -2638,6 +2644,29 @@ static void accel_shutdown(zend_extension *extension)
 
 void zend_accel_schedule_restart(zend_accel_restart_reason reason TSRMLS_DC)
 {ENTER(zend_accel_schedule_restart)
+
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+    if (ZSMMG(use_file_cache)) {
+        if (!ZFCSG(file_cache_dirty)) {
+            char *msg;
+
+            switch (reason) {
+                case ACCEL_RESTART_OOM:
+                    msg = "out of memory"; break;
+                case ACCEL_RESTART_WASTED:
+                    msg = "wasted memory"; break;
+                case ACCEL_RESTART_HASH:
+                    msg = "hash overflow"; break;
+                case ACCEL_RESTART_USER:
+                    msg = "opcache_reset"; break;
+            }
+            zend_accel_error(ACCEL_LOG_DEBUG, 
+                             "Restart schedule bypassed in MTS mode (due to %s). Clearing file cache", msg);
+        ZFCSG(file_cache_dirty) = 1;
+        }
+        return;
+    }
+#endif
 	if (ZCSG(restart_pending)) {
 		/* don't schedule twice */
 		return;

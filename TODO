@@ -1,0 +1,68 @@
+== Health Warning ==
+
+This is a preliminary release that I wouldn't consider as even alpha code.  It still has known 
+issues and I have only really done main path coverage.  I have released it at this stage primarily
+for feedback from the OPcache developers so that I can align what I am doing to their input before
+even suggesting progress towards a merge.  
+
+I still have to shake down:
+
+* Bare vs. PHP or Zend wrapped I/O for the file cache
+* Script invalidation and resource exhaustion paths
+* Compression alternatives
+* 32-bit build tests
+* PHP 5.2, 5.4 and 5.5 code variants
+* Windows API builds
+
+So still a LONG way to go, but as to the dogma "there's no point in using a file cache because it
+makes no performance difference", this version does show by example that it does, and a material 
+one. 
+
+== Tests ==
+
+I can't use the standard test framework for OPcache as I need to test multiple test paths (e.g. 
+priming cache, extending cache, readonly cache).  To this end, I have added an extra wrapper 
+tests/std-test.sh which does this, and at the moment this is still specific to my config.  However, 
+I really need to extend the functionality of the run-tests.php script to be cache-aware (e.g. at the
+moment is always generates a .php script from the .phpt which means that I can't path test
+validation.)  
+
+The tests that I have in my tests directory are largely a hang-over from LPC and these need to be
+replaced with a set which exercises the OPcache-specific paths. 
+
+Nonetheless, MLC OPcache seems to work well with the core, Zend and ext/standard tests subject to 
+the following known failures:  
+
+* bug43450 gives false fail on the cache-prime run as compilation does memory_usage checks that valid 
+emalloc done by the OPcache alloactor throw the test off.
+
+* All tests which generate compile warnings on the cache-prime fail on the on cached passes as 
+  compile errors aren't generated for pre-compiled code.
+
+There are no known other test errors at this stage.
+    
+need to check further:
+    bug43450
+    bug62680
+
+== Response to resource exhaustion and invalidated cache ==
+
+Opcache optionally does timestamp checks on files and can then set persistent_script->corrupted = 1
+ZSMMG(wasted_shared_memory) and schedule zend_accel_schedule_restart_if_necessary(); these need to
+map onto file-cache actions: once the cache is suspect opcache should be disabled, all saving of 
+modules turned off and the cache deleted.
+
+
+== Simple Benchmark ==
+
+Prime VFAT cache, 100 reps uncached; prime file and VFAT cache, 100 reps cached
+
+cd /var/www/drmyhill/maintenance
+
+/opt/bin/php -d opcache.enable=0 runJobs.php 
+(for ((i=0;i<100;i=i+1)); do time /opt/bin/php -d opcache.enable=0 runJobs.php; done ) |& grep real
+
+/opt/bin/php -d opcache.cache_pattern='(.*?)\.php' -d opcache.cache_file='$1.cache' \
+                                              -d opcache.validate_timestamps=0 runJobs.php
+(for ((i=0;i<100;i=i+1)); do time /opt/bin/php -d opcache.cache_pattern='(.*?)\.php' -d opcache.cache_file='$1.cache' \
+                                              -d opcache.validate_timestamps=0 runJobs.php; done ) |& grep real

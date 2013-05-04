@@ -81,6 +81,11 @@ void zend_shared_alloc_create_lock(void)
 {ENTER(zend_shared_alloc_create_lock)
 	int val;
 
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+    if (strcmp(sapi_module.name, "cli") == 0 || strcmp(sapi_module.name, "cgi-fcgi") == 0) {
+        return;
+    }
+#endif
 #ifdef ZTS
     zts_lock = tsrm_mutex_alloc();
 #endif
@@ -403,31 +408,33 @@ static FLOCK_STRUCTURE(mem_write_unlock, F_UNLCK, SEEK_SET, 0, 1);
 
 void zend_shared_alloc_lock(TSRMLS_D)
 {ENTER(zend_shared_alloc_lock)
+
+    if(!MLC_MODE()) {
 #ifndef ZEND_WIN32
 
 #ifdef ZTS
-	tsrm_mutex_lock(zts_lock);
+    	tsrm_mutex_lock(zts_lock);
 #endif
 #if 0
-	/* this will happen once per process, and will un-globalize mem_write_lock */
-	if (mem_write_lock.l_pid == -1) {
-		mem_write_lock.l_pid = getpid();
-	}
+	    /* this will happen once per process, and will un-globalize mem_write_lock */
+	    if (mem_write_lock.l_pid == -1) {
+		    mem_write_lock.l_pid = getpid();
+	    }
 #endif
 
-	while (1) {
-		if (fcntl(lock_file, F_SETLKW, &mem_write_lock) == -1) {
-			if (errno == EINTR) {
-				continue;
-			}
-			zend_accel_error(ACCEL_LOG_ERROR, "Cannot create lock - %s (%d)", strerror(errno), errno);
-		}
-		break;
-	}
+	    while (1) {
+		    if (fcntl(lock_file, F_SETLKW, &mem_write_lock) == -1) {
+			    if (errno == EINTR) {
+				    continue;
+			    }
+			    zend_accel_error(ACCEL_LOG_ERROR, "Cannot create lock - %s (%d)", strerror(errno), errno);
+		    }
+		    break;
+	    }
 #else
-	zend_shared_alloc_lock_win32();
+    	zend_shared_alloc_lock_win32();
 #endif
-
+    }
 	ZCG(locked) = 1;
 
 	/* Prepare translation table
@@ -446,6 +453,7 @@ void zend_shared_alloc_unlock(TSRMLS_D)
 
 	ZCG(locked) = 0;
 
+    RETURN_IF_MLC_MODE();
 #ifndef ZEND_WIN32
 #ifdef ZTS
 	tsrm_mutex_unlock(zts_lock);

@@ -554,6 +554,7 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
               script->record.reloc_bvec_size;
     buf = emalloc(buf_len);
     CHECK(fread((void *) buf, 1, buf_len, ZFCSG(fp)) == buf_len);
+    ZFCSG(file_next_pos) = offset + buf_len;
 
     obuf_len = script->record.uncompressed_size;
 

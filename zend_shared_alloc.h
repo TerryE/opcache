@@ -120,6 +120,17 @@ extern zend_smm_shared_globals *smm_shared_globals;
 
 #define ZSMMG(element)		(smm_shared_globals->element)
 
+#ifdef OPCACHE_ENABLE_FILE_CACHE
+# define MLC_MODE() ZSMMG(use_file_cache)
+# define RETURN_IF_MLC_MODE() \
+    if(MLC_MODE()) {\
+        return;\
+    }
+#else
+# define MLC_MODE() (0)
+# define RETURN_IF_MLC_MODE() 
+#endif
+
 #define SHARED_ALLOC_REATTACHED		(SUCCESS+1)
 
 int zend_shared_alloc_startup(int requested_size);
