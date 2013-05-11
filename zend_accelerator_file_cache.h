@@ -32,8 +32,8 @@ typedef struct _zend_file_cache_record {
 	zend_uint compressed_size;
 	zend_uint uncompressed_size;
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-    zend_uint full_interned_size;
-    zend_uint compressed_interned_size;
+//    zend_uint full_interned_size;
+//    zend_uint compressed_interned_size;
 # endif
     zend_uint script_offset;
     zend_uint reloc_bvec_size;
@@ -58,6 +58,10 @@ typedef struct _zend_accel_file_cache_globals {
     size_t                   next_file_cache_offset;
     FILE                    *fp_tmp;
     char                    *temp_cache_file;
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
+    uint                     interned_skip;
+    Bucket                  *interned_base;
+#endif
 } zend_accel_file_cache_globals;
 
 # define ZFCSG(element)  (accel_shared_globals->fcg.element)

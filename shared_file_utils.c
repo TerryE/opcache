@@ -25,6 +25,8 @@
 
 #include "zend_shared_alloc.h"
 #include "zend_accelerator_util_funcs.h"
+#include "lz4/lz4.h"
+#include "lz4/lz4hc.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -90,13 +92,25 @@
 #define FINGERPRINT_FORMAT      "OPcache==0x%08u==\r\n"
 #define SCRIPT_VEC_HEADROOM 32
 
+#if SIZEOF_SIZE_T == 8
+# define ADDR_HI_SET ((size_t) 0x8000000000000000)
+#else
+# define ADDR_HI_SET ((size_t) 0x80000000)
+#endif
+
 typedef struct _fc_index_header {
     char        fingerprint[FINGERPRINT_SIZE];
+
 	zend_uint   compressed_size;
 	zend_uint   uncompressed_size;
     zend_uint   script_count;
     zend_uint   max_include_paths_entry;
     zend_uint   max_hash_entry;
+# if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
+    zend_uint   interned_base_count;
+    zend_uint   interned_base_tail;
+    zend_uint   interned_strings_count;
+#endif    
 } fc_index_header;
 
 static char     *generate_cache_name(TSRMLS_D);
@@ -107,8 +121,10 @@ static void      resize_file_cached_script_vec(void);
 static zend_uint make_interned_vars(zend_file_cached_script *script, char **interned_vec);
 #endif
 static FILE     *open_temporary_file(char* prefix, char **name TSRMLS_DC);
-static int       write_index_to_file(FILE *fd TSRMLS_DC);
+static int       write_index_to_file(FILE *fd);
 static size_t    copy_file(FILE *in, FILE *out);
+static int       cache_compress(const char* source, char** dest, int source_size);
+static int       cache_decompress(const char* source, char* dest, int source_size, int dest_size);
 
 int zend_accel_open_file_cache(TSRMLS_D)
 {ENTER(zend_accel_open_file_cache)
@@ -123,9 +139,14 @@ int zend_accel_open_file_cache(TSRMLS_D)
     zend_file_cache_record *r;
     zend_accel_hash_entry  *bucket;
 
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
+    ZFCSG(interned_skip) = ZCSG(interned_strings).nNumOfElements;
+    ZFCSG(interned_base) = ZCSG(interned_strings).pListTail;
+#endif
+
     if ((ZCG(cache_path) = generate_cache_name(TSRMLS_C)) == NULL) {
         /* no cache file so fail through to defaul (no file cache) processing */
-        zend_accel_error(ACCEL_LOG_WARNING, "LOAD: no cache file specified");
+        zend_accel_error(ACCEL_LOG_INFO, "LOAD: no cache file specified");
         return 0;
     }
 
@@ -142,11 +163,31 @@ int zend_accel_open_file_cache(TSRMLS_D)
         return 1;
     }
 
-	CHECK(fstat(fileno(fp), &ZFCSG(fp_stat_block)) == 0);
 
-    errmsg = "fingerprint mismatch";
-    CHECK(fread((void *) &header, 1, sizeof(header), fp) == sizeof(header) &&
-          memcmp(header_fingerprint, header.fingerprint, FINGERPRINT_SIZE) == 0);
+    if (fread((void *) &header, 1, sizeof(header), fp) != sizeof(header)
+        || memcmp(header_fingerprint, header.fingerprint, FINGERPRINT_SIZE) != 0 
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
+        || ZFCSG(interned_skip) != header.interned_base_count
+        || ZFCSG(interned_base) != (Bucket*)(ZCSG(interned_strings_start) + header.interned_base_tail)
+#endif
+        ) {
+    	zend_accel_error(ACCEL_LOG_WARNING, "Fingerprint mismatch on File cache", errmsg);
+        ZFCSG(file_cache_dirty) = 1;
+        fclose(fp);
+	    zend_shared_alloc_unlock(TSRMLS_C);
+        return 0;
+    }
+
+    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  header.compressed_size, 
+                  header.uncompressed_size, header.script_count, 
+                  header.max_include_paths_entry, header.max_hash_entry);
+# if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
+    DEBUG3(INDEX,"Cache File header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
+                 header.interned_strings_count, header.interned_base_tail);
+#endif    
+
+    errmsg = "unable to stat file";
+	CHECK(fstat(fileno(fp), &ZFCSG(fp_stat_block)) == 0);
 
     cbuf = emalloc(header.compressed_size);
     errmsg = "unable to read index";
@@ -157,8 +198,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
 	zend_shared_alloc_lock(TSRMLS_C);
 
     obuf = zend_shared_alloc(obuf_len);
-    CHECK(uncompress((unsigned char *)obuf, &obuf_len, (unsigned char *)cbuf, header.compressed_size) == Z_OK &&
-          obuf_len == header.uncompressed_size);
+    CHECK(cache_decompress(cbuf, obuf, header.compressed_size, header.uncompressed_size));
     efree(cbuf);
     cbuf = NULL;
     
@@ -175,15 +215,15 @@ int zend_accel_open_file_cache(TSRMLS_D)
         ZFCSG(file_cached_scripts)[i].record = *r;
         ZFCSG(file_cached_scripts)[i].record_offset = offset;
         offset += r->compressed_size +
-# if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-                  r->compressed_interned_size +
-# endif
                   r->reloc_bvec_size;
         ZFCSG(file_cached_scripts)[i].incache_script_bucket = NULL;
     }
 
     ZFCSG(next_file_cache_offset) = offset;
     p = (char *) r;
+
+
+
 
     CHECK_MARKER();
 
@@ -196,6 +236,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
 	    if (!zend_accel_hash_find(&ZCSG(include_paths), p, include_path_len + 1)) {
     		zend_accel_hash_update(&ZCSG(include_paths), p, include_path_len + 1, 0, p + include_path_len + 1);
         }
+        DEBUG1(INDEX, "include path:%s", p);
         p += include_path_len + 3;
     }
 
@@ -206,6 +247,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
         zend_uint p_length = strlen(p);
         bucket = zend_accel_hash_update(&ZCSG(hash), p, p_length + 1, 0, ZFCSG(file_cached_scripts)+i);
         ZFCSG(file_cached_scripts)[i].incache_script_bucket = bucket;
+        DEBUG1(INDEX, "script path:%s", p);
         p += p_length + 1;
     }
 
@@ -218,10 +260,34 @@ int zend_accel_open_file_cache(TSRMLS_D)
         p += strlen(p) + 1;
         p_length = strlen(p) + 1;
         (void) zend_accel_hash_update(&ZCSG(hash), p, p_length, 1, ZFCSG(file_cached_scripts)[j].incache_script_bucket);
+        DEBUG2(INDEX, "indirect path:%s refers to:%s", p, ZFCSG(file_cached_scripts)[j].incache_script_bucket->key);
         p += p_length;
     }
 
     CHECK_MARKER();
+
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
+
+    /* scan interned strings added by module scripts */
+    for (i = 0; i < header.interned_strings_count; i++) {
+        int key_length;
+        if ((signed) *p > 0 ) {
+            key_length = *p++;
+        } else {
+            int shift = 0;
+            key_length = 0;
+            do {
+                key_length |= ((int)(*p & 0x7f))<<shift;
+                shift += 7;
+            } while ((signed) *p++ < 0 );
+        }
+        (void) accel_new_interned_string(p, key_length, 0 TSRMLS_CC);
+        DEBUG3(INDEX, "New interned[%u] (%u):%s", i, key_length, p);
+        p += key_length;
+    }
+
+    CHECK_MARKER();
+#endif    
 
     CHECK((p - obuf) == header.uncompressed_size);
 
@@ -271,7 +337,7 @@ void zend_accel_close_file_cache(TSRMLS_D)
 
     CHECK(tmp_fp = open_temporary_file(TMP_FILE_PREFIX, &tmp_filename TSRMLS_CC));
 
-    CHECK(write_index_to_file(tmp_fp TSRMLS_CC));
+    CHECK(write_index_to_file(tmp_fp));
 
     if(ZFCSG(fp)) {
         CHECK(fseek(ZFCSG(fp),ZFCSG(file_cached_scripts)[0].record_offset, SEEK_SET)==0);
@@ -328,14 +394,16 @@ static size_t copy_file(FILE *in, FILE *out)
     return bytes_copied;
 }
 
-static int write_index_to_file(FILE *fd TSRMLS_DC)
+static int write_index_to_file(FILE *fd)
 {ENTER(write_index_to_file)
     char                   *obuf, *zbuf, *p;
     zend_uint               i, len;
-    zend_ulong              zbuf_length;
 	fc_index_header         header;
     zend_file_cache_record *r;
-
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
+    Bucket *interned_bucket;
+    uint num_interned_strings;
+#endif
     /* The cache contains op_arrays which reference entries from the zend_opcode_handlers vector, so
        it is specific to a given PHP build; so use the CRC of the vector as a build fingerprint */
     ZFCSG(ophandler_crc) = zend_adler32(ADLER32_INIT, (signed char *)zend_opcode_handlers, OPCODE_TABLE_SIZE * sizeof(void *));
@@ -360,6 +428,29 @@ static int write_index_to_file(FILE *fd TSRMLS_DC)
     /*    + the indirect entries also store a link index.  Use 8 char worst case */ 
     len += (ZCSG(hash).num_entries - ZCSG(hash).num_direct_entries)*8;
 
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
+    /*    + the interned strings used in the modules */ 
+    num_interned_strings = ZCSG(interned_strings).nNumOfElements - ZFCSG(interned_skip);
+    interned_bucket = ZCSG(interned_strings).pListTail;
+
+    for (i = 0; i < num_interned_strings ; i++) {
+        uint string_length = interned_bucket->nKeyLength;
+        interned_bucket = interned_bucket->pListLast;
+        len += 1 + string_length;
+        while (string_length > 0x7f) { /* count any extra multi-byte length bytes */
+            string_length >>= 7;
+            len++;
+        }
+    }    
+    len += sizeof("****");
+
+    assert(interned_bucket == ZFCSG(interned_base) || ZFCSG(interned_skip) == 0);
+
+    header.interned_base_count    = ZFCSG(interned_skip);
+    header.interned_strings_count = num_interned_strings;
+    header.interned_base_tail     = (char *)ZFCSG(interned_base) - ZCSG(interned_strings_start);
+# endif
+
     obuf = emalloc(len);
 
 #define PUT_MARKER() memcpy(p,"****", 5); p+=5;
@@ -373,6 +464,7 @@ static int write_index_to_file(FILE *fd TSRMLS_DC)
 
     for (i = 0;  i < ZCSG(include_paths).num_entries; i++) {
         memcpy(p, ZCSG(include_paths).hash_entries[i].key, ZCSG(include_paths).hash_entries[i].key_length);
+        DEBUG1(INDEX, "include path:%s", p);
         p += ZCSG(include_paths).hash_entries[i].key_length;
         *p++ = 0;
         *p++ = 0;
@@ -383,6 +475,7 @@ static int write_index_to_file(FILE *fd TSRMLS_DC)
     for (i = 0; i < ZFCSG(file_cached_script_count); i++) {
         zend_accel_hash_entry *bucket = ZFCSG(file_cached_scripts)[i].incache_script_bucket;
         memcpy(p, bucket->key, bucket->key_length);
+        DEBUG1(INDEX, "script path:%s", p);
         p += bucket->key_length;
     }
 
@@ -400,22 +493,47 @@ static int write_index_to_file(FILE *fd TSRMLS_DC)
             sprintf(p,"%u",ndx);
             p += strlen(p)+1;
             memcpy(p, bucket->key, bucket->key_length);
+            DEBUG1(INDEX, "indirect path:%s", p);
             p += bucket->key_length;         
         }
     }
 
     PUT_MARKER();
 
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)   
+    /* scan interned strings added by module scripts */
+    for (i = 0, interned_bucket = ZFCSG(interned_base)->pListNext; i < num_interned_strings; i++) {
+        uint l = interned_bucket->nKeyLength;
+
+        while (l > 0x000000007f) {
+            *p++ = ((char) (l & 0x000000007f)) | 0x80 ;
+            l >>= 7;
+        }
+        *p++ = l;
+        DEBUG3(INDEX, "Interned[%u] (%u):%*2$s", i, interned_bucket->nKeyLength, interned_bucket->arKey);
+        memcpy(p, interned_bucket->arKey, interned_bucket->nKeyLength);
+        p += interned_bucket->nKeyLength;
+        interned_bucket = interned_bucket->pListNext;
+    }
+
+    PUT_MARKER();
+#endif
 	header.uncompressed_size       = p - obuf;
+
     CHECK(header.uncompressed_size <= len);
 
-    zbuf_length = compressBound(header.uncompressed_size);
-	zbuf = emalloc(zbuf_length);
-	CHECK(compress((unsigned char *)zbuf, &zbuf_length, (unsigned char *) obuf, header.uncompressed_size) == Z_OK);
-	header.compressed_size         = zbuf_length;
+    CHECK((header.compressed_size = cache_compress(obuf, &zbuf, header.uncompressed_size)) > 0);
+
+    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  header.compressed_size,
+                  header.uncompressed_size, header.script_count, 
+                  header.max_include_paths_entry, header.max_hash_entry);
+# if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
+    DEBUG3(INDEX, "Cache File header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
+                  header.interned_strings_count, header.interned_base_tail);
+#endif    
 
     CHECK(fwrite(&header, 1, sizeof(header),fd) == sizeof(header));
-    CHECK(fwrite(zbuf, 1, zbuf_length, fd) == zbuf_length);
+    CHECK(fwrite(zbuf, 1, header.compressed_size, fd) == header.compressed_size);
     efree(obuf);
     efree(zbuf);
 
@@ -466,9 +584,6 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
     zend_uint                ndx = ZFCSG(file_cached_script_count)++;
     zend_file_cached_script  entry;
     char                    *zbuf = NULL, *rbvec = NULL, *interned_vec = NULL;
-    zend_ulong               zbuf_length;
-void *x = &(ZFCSG(temp_cache_file));
-void *y = &accel_shared_globals->fcg.temp_cache_file;
               
     if (ZFCSG(file_cache_dirty) || bucket->indirect) { /* ignore file cache once flagged as dirty */
         return;
@@ -488,31 +603,23 @@ void *y = &accel_shared_globals->fcg.temp_cache_file;
     entry.record.script_offset     = (char *)script - module_addr;
     entry.record.reloc_bvec_size   = make_block_rbvec(module_addr, script->size, &rbvec);
 
-# if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-    entry.record.full_interned_size = make_interned_vars(script, &interned_vec);
-# endif
+    CHECK((entry.record.compressed_size = cache_compress(module_addr, &zbuf, script->size)) > 0);
 
-	zbuf_length = compressBound(entry.record.uncompressed_size);
-	zbuf = emalloc(zbuf_length);
-	CHECK(compress((unsigned char *)zbuf, &zbuf_length, module_addr, script->size) == Z_OK);
-    CHECK(fwrite(zbuf, 1, zbuf_length, ZFCSG(fp_tmp))==zbuf_length);
-	entry.record.compressed_size = zbuf_length;
-    ZFCSG(next_file_cache_offset) += zbuf_length + entry.record.reloc_bvec_size;
-
+    CHECK(fwrite(zbuf, 1, entry.record.compressed_size, ZFCSG(fp_tmp))==entry.record.compressed_size);
+    ZFCSG(next_file_cache_offset) += entry.record.compressed_size + entry.record.reloc_bvec_size;  
     CHECK(fwrite(rbvec, 1,entry.record.reloc_bvec_size, ZFCSG(fp_tmp))==entry.record.reloc_bvec_size);
+    efree(zbuf); zbuf = NULL;
 
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
 // TODO: Interned string support
-    if (zbuf_size < compressBound(entry.record.full_interned_size) {
-        zbuf = erealloc(entry.record.full_interned_size);
-    }
-	CHECK(compress(zbuf, &zbuf_length, &interned_vec, entry.record.full_interned_size) == Z_OK);
-    CHECK(fwrite(zbuf, 1, zbuf_length, ZFCSG(fp_tmp))==zbuf_length);
-    entry.record.compressed_interned_size = zbuf_length;
-    ZFCSG(next_file_cache_offset) += zbuf_length;
+//   if (zbuf_size < compressBound(entry.record.full_interned_size) {
+//        zbuf = erealloc(entry.record.full_interned_size);
+//    }
+//    CHECK((entry.record.compressed_interned_size = cache_compress(module_addr, &zbuf, entry.record.full_interned_size)) > 0);
+//    CHECK(fwrite(zbuf, 1, zbuf_length, ZFCSG(fp_tmp))==zbuf_length);
+//    ZFCSG(next_file_cache_offset) += entry.record.compressed_interned_size;
+//    efree(zbuf); zbuf = NULL:
 # endif
-
-    efree(zbuf);
 
     relocate_script(&entry, module_addr, rbvec, interned_vec);  /* undo relocation side-effects */
     ZFCSG(file_cached_scripts)[ndx] = entry;
@@ -537,7 +644,7 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
     char *buf = NULL;
     char *obuf, *reloc_bvec, *interned = NULL;
     zend_uint buf_len;
-    zend_ulong offset, obuf_len, interned_len;
+    zend_ulong offset, obuf_len;
 
     if (ZFCSG(file_cache_dirty)) { /* ignore file cache once flagged as dirty */
         return;
@@ -548,9 +655,6 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
 	}
 
     buf_len = script->record.compressed_size +
-#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-              script->record.compressed_interned_size +
-#endif
               script->record.reloc_bvec_size;
     buf = emalloc(buf_len);
     CHECK(fread((void *) buf, 1, buf_len, ZFCSG(fp)) == buf_len);
@@ -560,17 +664,14 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
 
 	zend_shared_alloc_lock(TSRMLS_C);
     obuf = zend_shared_alloc(obuf_len);
-    CHECK(uncompress((unsigned char *)obuf, &obuf_len, (unsigned char *)buf, script->record.compressed_size) == Z_OK &&
-          obuf_len == script->record.uncompressed_size);
 
+    CHECK(cache_decompress(buf, obuf, script->record.compressed_size, script->record.uncompressed_size));
     reloc_bvec = buf + script->record.compressed_size;
 
 #if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-    interned = emalloc(script->uncompressed_interned_size);
-    interned_len = script->uncompressed_interned_size;
-    CHECK(uncompress(interned, &interned_len, reloc_bvec+script->reloc_bvec_size, 
-                     script->compressed_interned_size) == Z_OK &&
-          interned_len == script->uncompressed_interned_size);
+//    interned = emalloc(script->uncompressed_interned_size);
+//    CHECK(cache_decompress(reloc_bvec+script->reloc_bvec_size, interned, 
+//                           script->compressed_interned_size, script->uncompressed_interned_size));
 #endif
     bucket->data = obuf + script->record.script_offset;
     relocate_script(script, obuf, reloc_bvec, interned);
@@ -589,12 +690,7 @@ error:
 	zend_shared_alloc_unlock(TSRMLS_C);
     return;
 }
-#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-static zend_uint make_interned_vars(zend_file_cached_script *script, char **interned_vec)
-{ENTER(make_interned_vars)
-    return 0;
-}
-#endif
+
 void zend_accel_file_cache_clear_file_cache(void)
 {ENTER(zend_accel_file_cache_clear_file_cache)
 }
@@ -616,7 +712,7 @@ static char *generate_cache_name(TSRMLS_D)
     int error_offset, n_pats; 
 
     /* Only do replacement processing if the cache parameters are set. */ 
-    if (!repl || repl[0] =='\0') { 
+    if (!filename || !repl || repl[0] =='\0') { 
         return NULL;
     } 
     if (!filt || filt[0] =='\0') { 
@@ -698,12 +794,13 @@ static char *generate_cache_name(TSRMLS_D)
 }
 
 /* {{{ make_block_rbvec 
-   BOTCH WARNING: This code is a pull from LPC, but restyled in the ZendOptimizer (zero inline
-   documentation) coding style. The LPC version used intelligent taging to identify valid pointers
-   for relocation. This version simply identifies any size_t value in the address range of the block
-   as an block-internal pointer. This works for now on 64bit architectures as a block addr is
+   BOTCH WARNING: This code was originally a pull from LPC, but restyled in the ZendOptimizer 
+   coding style. The LPC version used intelligent taging to identify valid pointers for relocation. 
+   This version simply identifies any size_t value in the address range of the block or the interned
+   pool as an block-internal pointer. This works for now on 64bit architectures as a block addr is
    typically a pretty high 64bit value (eg. 0x00007f90cbdf3000) which won't be in the block unless
-   it is an internal pointer. This will need to be fixed in the next commit point. */
+   it is an internal pointer. This will need to be fixed in the next commit point. 
+   It also exploits the fact that all targets are size_t aligned */
 static zend_uint make_block_rbvec(void *addr, zend_uint size, char **rbvec)
 {ENTER(make_block_rbvec)
     void **p, **lastp, **pend;
@@ -713,10 +810,15 @@ static zend_uint make_block_rbvec(void *addr, zend_uint size, char **rbvec)
     /* 1st pass to compute size of the relocation vector */
     for (p = (void **)addr, lastp = p, pend = p + (size / sizeof(void*)); p < pend; p++) {
         if (!*p) continue;
-        if ( ((size_t)((char *)*p - (char *)addr)) < size ) {
+        delta = 0;
+        if ( ((size_t)((char *)*p - (char *)addr)) < size
+#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
+             || IS_INTERNED((char *) *p)
+#endif
+           ) {
             cnt++;
             /* add extra bytes when multi-byte sequences are used */
-            for (delta=(zend_uint)(p-lastp); delta>=0x80; delta >>= 7, cnt++) { }
+            for (delta = (zend_uint) (p - lastp); delta>=0x80; delta >>= 7, cnt++) { }
             lastp = p;
         }
     }
@@ -730,31 +832,39 @@ static zend_uint make_block_rbvec(void *addr, zend_uint size, char **rbvec)
     /* 2nd pass to generate the relocation byte vector */
     for (p = (void **)addr, q = reloc_bvec, lastp = p, pend = p + (size / sizeof(void*)); 
          p < pend; p++) {
+        /* The target if in the module or interned pool is itself size_t aligned, so the PIC
+           form is the size_t units from the base module addr / interned pool start. */
         if ( ((size_t)((char *)*p - (char *)addr)) < size ) {
-            delta = (zend_uint)(size_t)(p-lastp);
-            *p = (void *) (*(char **)p - (char *)addr); /* convert ptr to offset */
-            if (delta <= 0x7f) { /* the typical case */
-                *q++ = (unsigned char) delta;
-            } else {             /* handle the multi-byte cases */
-               /* Emit multi-bytes lsb first with 7 bits sig; high-bit set to indicate follow-on. */
-                *q++ = (unsigned char)(delta & 0x7f) | 0x80;
-                if (delta <= 0x3fff) {
-                    *q++ = (unsigned char)((delta>>7)  & 0x7f);
-                } else if (delta <= 0x1fffff) {
-                    *q++ = (unsigned char)((delta>>7)  & 0x7f) | 0x80;
-                    *q++ = (unsigned char)((delta>>14) & 0x7f);    
-                } else if (delta <= 0xfffffff) {
-                    *q++ = (unsigned char)((delta>>7)  & 0x7f) | 0x80;
-                    *q++ = (unsigned char)((delta>>14) & 0x7f) | 0x80;
-                    *q++ = (unsigned char)((delta>>21) & 0x7f);    
-                } else {
-                    zend_accel_error(ACCEL_LOG_ERROR, 
-                                     "Fatal: invalid offset %u found during internal copy", delta);
-                    return 0;
-                }
-            }
-            lastp = p;
+            *p    = (void *) (*(size_t **)p - (size_t *)addr); /* convert ptr to offset */
+#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
+        } else if (IS_INTERNED(*(char **) p)) {
+            *p    = (void *) (ADDR_HI_SET + (*(size_t **)p - (size_t *)ZCSG(interned_strings_start)));
+#endif
+        } else {
+            continue;
         }
+        delta = (zend_uint) (size_t) (p - lastp);
+        if (delta <= 0x7f) { /* the typical case */
+            *q++ = (unsigned char) delta;
+        } else {             /* handle the multi-byte cases */
+           /* Emit multi-bytes lsb first with 7 bits sig; high-bit set to indicate follow-on. */
+            *q++ = (unsigned char)(delta & 0x7f) | 0x80;
+            if (delta <= 0x3fff) {
+                *q++ = (unsigned char)((delta>>7)  & 0x7f);
+            } else if (delta <= 0x1fffff) {
+                *q++ = (unsigned char)((delta>>7)  & 0x7f) | 0x80;
+                *q++ = (unsigned char)((delta>>14) & 0x7f);    
+            } else if (delta <= 0xfffffff) {
+                *q++ = (unsigned char)((delta>>7)  & 0x7f) | 0x80;
+                *q++ = (unsigned char)((delta>>14) & 0x7f) | 0x80;
+                *q++ = (unsigned char)((delta>>21) & 0x7f);    
+            } else {
+                zend_accel_error(ACCEL_LOG_ERROR, 
+                                 "Fatal: invalid offset %u found during internal copy", delta);
+                return 0;
+            }
+        }
+        lastp = p;
     }
     *q++ = '\0'; /* add an end marker so the reverse process can terminate */
     assert((zend_uchar *)q == reloc_bvec+cnt);
@@ -791,13 +901,19 @@ static void relocate_script(zend_file_cached_script *entry, char *memory_area, c
                 ((zend_uint)(p[2] & 0x7f)<<14) + (((zend_uint)p[3])<<21);
             p += 4;
         }
-        if (*q >= max_qval) {
-            zend_accel_error(ACCEL_LOG_ERROR, 
-                             "Relocation error: invalid offset %p at offset %08lx in SMA", 
-                             *((void **)q), (char *)q - (char *)addr_offset);
-        } else { 
-            *q += addr_offset;
+        if (*q < max_qval) {
+            *q = (size_t) ((size_t *) addr_offset + *q);
+            continue;
         }
+#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
+        if (*q & (size_t) ADDR_HI_SET) {
+            *q = (size_t)((size_t *)ZCSG(interned_strings_start) + (*q ^ ADDR_HI_SET));
+            continue;
+        }
+#endif
+        zend_accel_error(ACCEL_LOG_ERROR, 
+                         "Relocation error: invalid offset %p at offset %08lx in SMA", 
+                         *((void **)q), (char *)q - (char *)addr_offset);
     } while (*p != '\0');
    
     assert((char *)q < memory_area + max_qval);
@@ -828,5 +944,59 @@ static FILE *open_temporary_file(char* prefix, char **name TSRMLS_DC)
     efree(tmp_name);
 	return NULL;
 }
+
+int cache_compress(const char* source, char** dest, int source_size)
+{ENTER(cache_compress)
+    int dest_size;
+    int algo = ZCG(accel_directives).compression_algo;
+    TSRMLS_FETCH();
+
+    if (algo == 1) { /* Standard zlib */
+        zend_ulong dest_length = dest_size = compressBound(source_size);
+	    *dest = emalloc(dest_size);
+
+	    if (compress(*(unsigned char **)dest, &dest_length, (unsigned char *)source, source_size) == Z_OK) {
+            return (int) dest_length;
+        } 
+    } else if (algo == 2 || algo == 3) { /* LZ4 and LZ4HC compress */
+        int dest_length;
+        dest_size = LZ4_compressBound(source_size);
+	    *dest = emalloc(dest_size);
+        dest_length = algo == 2 ? LZ4_compress(source, *dest, source_size) :
+                                  LZ4_compressHC(source, *dest, source_size);
+        if (dest_length) {
+            return dest_length;
+        }
+    }
+
+    efree(*dest);
+    *dest = NULL;
+    return 0;
+}
+
+int cache_decompress(const char* source, char* dest, int source_size, int dest_size)
+{ENTER(cache_decompress)
+    TSRMLS_FETCH();
+
+    if (!source || !dest || !source_size || !dest_size) {
+        return 0;
+    }
+
+    if (ZCG(accel_directives).compression_algo == 1) { /* Standard zlib */
+        zend_ulong dest_length = dest_size;
+
+        if (uncompress((unsigned char *)dest, &dest_length, (unsigned char *)source, source_size) == Z_OK &&
+            dest_size > 0 && dest_length == (unsigned) dest_size) {
+            return 1;
+        }
+    } else if (ZCG(accel_directives).compression_algo == 2 ||
+               ZCG(accel_directives).compression_algo == 3) { /* LZ4 & LZ4HC compress */
+        if (dest_size == LZ4_decompress_safe(source, dest, source_size, dest_size)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 #endif /* OPCACHE_ENABLE_FILE_CACHE */
 

@@ -46,9 +46,8 @@
    it will malloc and add an additional segment. */
 static int create_segments(size_t size, zend_shared_segment ***segments_p, int *segments_count_or_ndx, char **error_in)
 {ENTER(create_segments-malloc)
-    size_t segments_allocation, segment_size, block_size;
+    size_t segment_size;
 	zend_shared_segment *segment, **segments_vec;
-    int segments_count;
 
     if (ZSMMG(use_file_cache)==0) {
         size_t requested_size    = size;

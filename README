@@ -215,4 +215,12 @@ opcache.cache_file
 	the corresponding match string from the cache_pattern.  The file caching
     mode is only enabled if cache_file is non-blank and cache_pattern matches
     the requested script name.  
-	
+
+opcache.compression_algo (default "1")
+    1 = Zlib deflate/inflate
+    2 = LZ4
+    3 = LZ4 High Compression
+    Zlib generates the smallest cache files, but is the slowest at cache 
+    priming and reloading.  LZ4 gives the fastest cache priming, but the 
+    largest caches.  LZ4HC gives the best overall performance on reload 
+    executions.  

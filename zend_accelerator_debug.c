@@ -116,10 +116,11 @@ void *accel_resolve_symbol(const char *symbol)
 
     return addr;
 }
-
+#ifdef ACCEL_DEBUG
+int accel_directives_debug_flags = 0;
+int accel_directives_debug_audit = 0;
 void dump(zend_op_array *op_array)
 {
-#ifdef ACCEL_DEBUG
 	TSRMLS_FETCH();
     void (*dump_op_array) (zend_op_array * TSRMLS_DC) = 
         accel_resolve_symbol("vld_dump_oparray");
@@ -158,11 +159,7 @@ static int func_compare(const void *a, const void *b)
 {
     return strcmp(*(const char **)a, *(const char **)b);
 }
-#endif
 
-int accel_debug_enter(char *s)
-{
-#ifdef ACCEL_DEBUG
 #define FIND(str,n,found) \
     do {found = 2;\
         ulong hash = zend_inline_hash_func(str, strlen(str)); \
@@ -177,6 +174,8 @@ int accel_debug_enter(char *s)
         assert(found<2); \
     } while (0)
 
+int accel_debug_enter(char *s)
+{
     struct _func_table {
         const char* func_name;
         ulong func_cnt;
@@ -185,41 +184,34 @@ int accel_debug_enter(char *s)
     static int n_func_probe = 0;
     uint stack_depth,i,ndx,found;
     const char fill[] = "                                                                                                    ";
-    TSRMLS_FETCH();
-#ifdef ZTS
-    if (accel_globals_id == 0) {
-        return 0;
+
+    FIND(s,ndx,found);
+    if (found==0) {
+        func_table[ndx].func_name=s;
     }
-#endif
-    if (ZCG(accel_directives.debug_flags)&(ACCEL_DBG_ENTER|ACCEL_DBG_COUNTS)) {
-        FIND(s,ndx,found);
-        if (found==0) {
-            func_table[ndx].func_name=s;
-        }
-        func_table[ndx].func_cnt++;
-        IF_DEBUG(ENTER) {
-            stack_depth = get_stack_depth();
-            zend_accel_error(ACCEL_LOG_DEBUG,"Entering %s %s",
-                      (stack_depth >= sizeof(fill) ? "" : fill + (sizeof(fill)-stack_depth)),
-                      s);
-        }
-        if (strcmp(s, "accel_shutdown")==0) {
-            IF_DEBUG(COUNTS) {
-                uint j=0;    
-                for (i = 0; i<FUNC_MAX; i++) {
-                    if (func_table[i].func_name != NULL) {
-                        func_table[j++]=func_table[i];
-                    }
+    func_table[ndx].func_cnt++;
+    IF_DEBUG(ENTER) {
+        stack_depth = get_stack_depth();
+        zend_accel_error(ACCEL_LOG_DEBUG,"Entering %s %s",
+                  (stack_depth >= sizeof(fill) ? "" : fill + (sizeof(fill)-stack_depth)),
+                  s);
+    }
+    if (strcmp(s, "accel_shutdown")==0) {
+        IF_DEBUG(COUNTS) {
+            uint j=0;    
+            for (i = 0; i<FUNC_MAX; i++) {
+                if (func_table[i].func_name != NULL) {
+                    func_table[j++]=func_table[i];
                 }
-                qsort(func_table, j, sizeof(struct _func_table), func_compare);
-                for (i = 0; i<j; i++) {
-                    zend_accel_error(ACCEL_LOG_DEBUG,"%6i %s",
-                                     func_table[i].func_cnt, func_table[i].func_name);
-                }
+            }
+            qsort(func_table, j, sizeof(struct _func_table), func_compare);
+            for (i = 0; i<j; i++) {
+                zend_accel_error(ACCEL_LOG_DEBUG,"%6i %s",
+                                 func_table[i].func_cnt, func_table[i].func_name);
             }
         }
     }
-#endif
     return 0;
 }
+#endif
 

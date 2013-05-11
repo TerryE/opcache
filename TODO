@@ -5,21 +5,31 @@ issues and I have only really done main path coverage.  I have released it at th
 for feedback from the OPcache developers so that I can align what I am doing to their input before
 even suggesting progress towards a merge.  
 
-I still have to implement / shake down:
+I still have to implement / shake down the following, so still a LONG way to go, but as to the dogma
+"there's no point in using a file cache because it makes no performance difference", this version
+does show by example that it does, and a material one.
 
-* Explicit relocation ptr tagging
-* Bare vs. PHP or Zend wrapped I/O for the file cache
-* Script invalidation and resource exhaustion paths
-* Compression alternatives
-* 32-bit build tests
-* PHP 5.2, 5.4 and 5.5 code variants
-* Windows API builds
+=== Explicit relocation ptr tagging ===
 
-So still a LONG way to go, but as to the dogma "there's no point in using a file cache because it
-makes no performance difference", this version does show by example that it does, and a material 
-one. 
+=== Bare vs. PHP or Zend wrapped I/O for the file cache ===
 
-== Tests ==
+=== Script invalidation and resource exhaustion paths ===
+
+=== Make tests/std-tests.sh configuration independant ===
+
+=== Rewrite tests/*.phpt scripts === 
+
+=== 32-bit build tests ===
+
+=== PHP 5.2 and 5.5 code variants ===
+
+=== Windows API builds ===
+
+== PHP 5.4 Tests ==
+
+Still lots to shake down.
+
+== PHP 5.3 Tests ==
 
 I can't use the standard test framework for OPcache as I need to test multiple test paths (e.g. 
 priming cache, extending cache, readonly cache).  To this end, I have added an extra wrapper 
@@ -42,9 +52,6 @@ emalloc done by the OPcache alloactor throw the test off.
 
 There are no known other test errors at this stage.
     
-need to check further:
-    bug43450
-    bug62680
 
 == Response to resource exhaustion and invalidated cache ==
 

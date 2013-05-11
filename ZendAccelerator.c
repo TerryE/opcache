@@ -92,9 +92,6 @@ zend_accel_globals accel_globals;
 #else
 int accel_globals_id;
 #endif
-#ifdef ACCEL_DEBUG
-int accel_directives_debug_flags=0;
-#endif
 
 /* Points to the structure shared across all PHP processes */
 zend_accel_shared_globals *accel_shared_globals = NULL;
@@ -2466,6 +2463,7 @@ static int accel_startup(zend_extension *extension)
 	}
 #ifdef ACCEL_DEBUG
     accel_directives_debug_flags = ZCG(accel_directives.debug_flags);
+    accel_directives_debug_audit = accel_directives_debug_flags&(ACCEL_DBG_ENTER|ACCEL_DBG_COUNTS);
 #endif
 
 	if (ZCG(enabled) == 0) {

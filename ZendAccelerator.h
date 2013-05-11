@@ -247,6 +247,7 @@ typedef struct _zend_accel_directives {
 #ifdef OPCACHE_ENABLE_FILE_CACHE
     char          *cache_pattern;     /* TE addition */
     char          *cache_file;        /* TE addition */
+    int            compression_algo;  /* TE addition */
 #endif
 } zend_accel_directives;
 

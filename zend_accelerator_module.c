@@ -248,6 +248,7 @@ accel_directives.debug_flags,               zend_accel_globals, accel_globals)
 #ifdef OPCACHE_ENABLE_FILE_CACHE
 	STD_PHP_INI_ENTRY("opcache.cache_pattern", NULL, PHP_INI_PERDIR,	OnUpdateString,	                             accel_directives.cache_pattern,                 zend_accel_globals, accel_globals)
 	STD_PHP_INI_ENTRY("opcache.cache_file", NULL, PHP_INI_PERDIR,	OnUpdateString,	                             accel_directives.cache_file,                 zend_accel_globals, accel_globals)
+	STD_PHP_INI_ENTRY("opcache.compression_algo", "1", PHP_INI_SYSTEM,	OnUpdateLong,	                             accel_directives.compression_algo,           zend_accel_globals, accel_globals)
 #endif
 ZEND_INI_END()
 
