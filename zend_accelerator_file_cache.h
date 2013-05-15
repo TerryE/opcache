@@ -51,13 +51,16 @@ typedef struct _zend_accel_file_cache_globals {
     zend_uint                file_cached_script_count;
     zend_uint                file_cached_script_alloc;
     zend_uint                ophandler_crc;
-    FILE                    *fp;
+    FILE                    *in_fp;
+    char                    *in_cachename;
+    FILE                    *new_fp;
+    char                    *new_cachename;
+    FILE                    *tmp_fp;
+    char                    *tmp_cachename;
     struct stat              fp_stat_block;
     size_t                   file_next_pos;
     size_t                   file_zero_pos;
     size_t                   next_file_cache_offset;
-    FILE                    *fp_tmp;
-    char                    *temp_cache_file;
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
     uint                     interned_skip;
     Bucket                  *interned_base;

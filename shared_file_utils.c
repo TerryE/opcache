@@ -69,7 +69,7 @@
 
    2) TODO: add compile-time checks only to enable OPCACHE_ENABLE_FILE_CACHE when PCRE is available.
 
-   3) TODO: GCC on ZCG(cache_path)
+   3) TODO: GCC on ZFCSG(in_cachename)
 
    4) TODO: zend_accel_save_sma() runs as part of image rundown by which time a lot of PHP services 
             have run down.  might be worth bumping its hook back to request shutdown to make life 
@@ -78,7 +78,7 @@
 #define CHUNK 65536
 #define TMP_FILE_PREFIX ".OPcache."
 #define CHECK(p) if(!(p)) goto error
-#define EFREE(p) if(p) efree(p)
+#define EFREE(p) if(p) {efree(p); p = NULL;}
 
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
 #  define MAX_OPCODE     156       /* 3 new opcodes in 5.4 - separate, bind_trais, add_trait */
@@ -123,6 +123,7 @@ static zend_uint make_interned_vars(zend_file_cached_script *script, char **inte
 static FILE     *open_temporary_file(char* prefix, char **name TSRMLS_DC);
 static int       write_index_to_file(FILE *fd);
 static size_t    copy_file(FILE *in, FILE *out);
+static void      cleanup_cache_files(void);
 static int       cache_compress(const char* source, char** dest, int source_size);
 static int       cache_decompress(const char* source, char* dest, int source_size, int dest_size);
 
@@ -144,8 +145,9 @@ int zend_accel_open_file_cache(TSRMLS_D)
     ZFCSG(interned_base) = ZCSG(interned_strings).pListTail;
 #endif
 
-    if ((ZCG(cache_path) = generate_cache_name(TSRMLS_C)) == NULL) {
-        /* no cache file so fail through to defaul (no file cache) processing */
+    ZFCSG(in_cachename) = generate_cache_name(TSRMLS_C);
+    if (!ZFCSG(in_cachename)) {
+        /* no cache file so fail through to default (no file cache) processing */
         zend_accel_error(ACCEL_LOG_INFO, "LOAD: no cache file specified");
         return 0;
     }
@@ -153,17 +155,19 @@ int zend_accel_open_file_cache(TSRMLS_D)
     /* The cache contains op_arrays which reference entries from the zend_opcode_handlers vector, so
        it is specific to a given PHP build; so use the CRC of the vector as a build fingerprint */
     ZFCSG(ophandler_crc) = zend_adler32(ADLER32_INIT, (signed char *)zend_opcode_handlers, OPCODE_TABLE_SIZE * sizeof(void *));
+
     memset(&header, 0, sizeof(header));
     sprintf(header_fingerprint, FINGERPRINT_FORMAT, ZFCSG(ophandler_crc));
-
-    if (ZCG(cache_path)[0] != '/' ||
-        (fp = fopen(ZCG(cache_path), "rb")) == NULL) {
+/// TODO: need to realpath this
+    if (ZFCSG(in_cachename)[0] != '/' ||
+        (fp = fopen(ZFCSG(in_cachename), "rb")) == NULL) {
         /* cache isn't a valid file or we can't open it so again fail through */ 
-        DEBUG1(LOAD,"LOAD: Cache file %s does not exist", ZCG(cache_path));
+        zend_accel_error(ACCEL_LOG_INFO, "LOAD: cache file %s does not exist. Creating new file.", ZFCSG(in_cachename));
+        DEBUG1(LOAD,"LOAD: Cache file %s does not exist", ZFCSG(in_cachename));
         return 1;
     }
 
-
+    ZFCSG(in_fp) = fp;
     if (fread((void *) &header, 1, sizeof(header), fp) != sizeof(header)
         || memcmp(header_fingerprint, header.fingerprint, FINGERPRINT_SIZE) != 0 
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
@@ -173,12 +177,11 @@ int zend_accel_open_file_cache(TSRMLS_D)
         ) {
     	zend_accel_error(ACCEL_LOG_WARNING, "Fingerprint mismatch on File cache", errmsg);
         ZFCSG(file_cache_dirty) = 1;
-        fclose(fp);
-	    zend_shared_alloc_unlock(TSRMLS_C);
+        cleanup_cache_files();
         return 0;
     }
 
-    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  header.compressed_size, 
+    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size, 
                   header.uncompressed_size, header.script_count, 
                   header.max_include_paths_entry, header.max_hash_entry);
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
@@ -221,9 +224,6 @@ int zend_accel_open_file_cache(TSRMLS_D)
 
     ZFCSG(next_file_cache_offset) = offset;
     p = (char *) r;
-
-
-
 
     CHECK_MARKER();
 
@@ -282,7 +282,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
             } while ((signed) *p++ < 0 );
         }
         (void) accel_new_interned_string(p, key_length, 0 TSRMLS_CC);
-        DEBUG3(INDEX, "New interned[%u] (%u):%s", i, key_length, p);
+        DEBUG3(INTERN, "New interned[%u] (%u):%s", i, key_length, p);
         p += key_length;
     }
 
@@ -292,93 +292,78 @@ int zend_accel_open_file_cache(TSRMLS_D)
     CHECK((p - obuf) == header.uncompressed_size);
 
 //  DEBUG3(LOAD,"LOAD: Cache file %s restored to %p (%u bytes)", cache_path, addr, header.used);
-    ZFCSG(fp) = fp; 
     ZFCSG(file_next_pos) = ZFCSG(file_zero_pos) = sizeof(header) + header.compressed_size;
 	zend_shared_alloc_unlock(TSRMLS_C);    
     return 1;
 
 error:
 	zend_accel_error(ACCEL_LOG_WARNING, "internal failure file cache load: %s", errmsg);
+	zend_shared_alloc_unlock(TSRMLS_C);
     ZFCSG(file_cache_dirty) = 1;
     EFREE(cbuf);
-    EFREE(ZFCSG(file_cached_scripts));
-    fclose(fp);
-	zend_shared_alloc_unlock(TSRMLS_C);
+    cleanup_cache_files();
     return 0;
 }
 
 void zend_accel_close_file_cache(TSRMLS_D)
 {ENTER(zend_accel_close_file_cache)
-    char *tmp_filename = NULL;
-    FILE *tmp_fp = NULL;
     struct stat sb = {0};
-    size_t bytes_copied = 0;
+    size_t bytes_copied = 0, bytes_copied2 = 0;
     int sb_rtn;
 
-    if (ZFCSG(file_cache_dirty)){
-        if (ZFCSG(fp)) {
-            fclose(ZFCSG(fp));
-        }
-        if (ZFCSG(fp_tmp)) {
-            fclose(ZFCSG(fp_tmp));
-        }
-        EFREE(ZFCSG(file_cached_scripts));
-        EFREE(ZFCSG(temp_cache_file));
-        return;
-
-    }
-    if (!ZFCSG(fp_tmp)) {
-        if (ZFCSG(fp)) {
-            fclose(ZFCSG(fp));
-        }
+    if (ZFCSG(file_cache_dirty) || !ZFCSG(tmp_fp)){
+        cleanup_cache_files();
         EFREE(ZFCSG(file_cached_scripts));
         return;
     }
 
-    CHECK(tmp_fp = open_temporary_file(TMP_FILE_PREFIX, &tmp_filename TSRMLS_CC));
+    CHECK(ZFCSG(new_fp) = open_temporary_file(TMP_FILE_PREFIX, &ZFCSG(new_cachename) TSRMLS_CC));
+    
+    CHECK(write_index_to_file(ZFCSG(new_fp)));
 
-    CHECK(write_index_to_file(tmp_fp));
-
-    if(ZFCSG(fp)) {
-        CHECK(fseek(ZFCSG(fp),ZFCSG(file_cached_scripts)[0].record_offset, SEEK_SET)==0);
-        bytes_copied = copy_file(ZFCSG(fp), tmp_fp);
-        fclose(ZFCSG(fp));
+    if(ZFCSG(in_fp)) {
+        CHECK(fseek(ZFCSG(in_fp),ZFCSG(file_cached_scripts)[0].record_offset, SEEK_SET)==0);
+        bytes_copied = copy_file(ZFCSG(in_fp), ZFCSG(new_fp));
+        DEBUG1(LOAD, "%u bytes copied from old cache to new", (int) bytes_copied);
     }
 
-    CHECK(fseek(ZFCSG(fp_tmp),0, SEEK_SET)==0);
-    bytes_copied += copy_file(ZFCSG(fp_tmp), tmp_fp);
+    CHECK(fseek(ZFCSG(tmp_fp),0, SEEK_SET)==0);
+    bytes_copied2 = copy_file(ZFCSG(tmp_fp), ZFCSG(new_fp));
+    DEBUG1(LOAD, "%u bytes copied from tmp cache to new", (int) bytes_copied2);
+    bytes_copied += bytes_copied2;
 
-    CHECK(bytes_copied == ZFCSG(next_file_cache_offset));
+    CHECK(bytes_copied == ZFCSG(next_file_cache_offset) - ZFCSG(file_cached_scripts)[0].record_offset);
 
-    fclose(ZFCSG(fp_tmp)); ZFCSG(fp_tmp) = NULL;
-    fclose(tmp_fp);
+    /* stat current cache.  If either previous cache doesn't exist or it does and hasn't already 
+       been overwritten by a parallel process do move */
+	sb_rtn = stat(ZFCSG(in_cachename), &sb);   
+    if (!ZFCSG(in_fp) && sb_rtn) {
+        (void) fclose(ZFCSG(new_fp));
+        ZFCSG(new_fp) = NULL;
+/// TODO: This can fail due to a share violation on Win32
+		(void) rename(ZFCSG(new_cachename), ZFCSG(in_cachename));
 
-	sb_rtn = stat(ZCG(cache_path), &sb);
-
-    if ((ZFCSG(fp) && sb_rtn == 0 &&
-	     ZFCSG(fp_stat_block).st_ino   == sb.st_ino &&
-         ZFCSG(fp_stat_block).st_dev   == sb.st_dev &&
-         ZFCSG(fp_stat_block).st_mtime == sb.st_mtime) ||
-        (!ZFCSG(fp) && sb_rtn == -1)) {
-		(void) rename(tmp_filename, ZCG(cache_path));
+    } else if (ZFCSG(in_fp) && !sb_rtn &&
+               ZFCSG(fp_stat_block).st_ino   == sb.st_ino &&
+               ZFCSG(fp_stat_block).st_dev   == sb.st_dev &&
+               ZFCSG(fp_stat_block).st_mtime == sb.st_mtime) {
+        (void) fclose(ZFCSG(in_fp));
+        (void) fclose(ZFCSG(new_fp));
+        ZFCSG(in_fp) = ZFCSG(new_fp) = NULL;
+/// TODO: This can fail due to a share violation on Win32
+		(void) rename(ZFCSG(new_cachename), ZFCSG(in_cachename));
 	} else {
-		(void) unlink(tmp_filename);
+		ZFCSG(file_cache_dirty) = 1;
 	}
-	efree(tmp_filename);
+    cleanup_cache_files();
     EFREE(ZFCSG(file_cached_scripts));
-    EFREE(ZFCSG(temp_cache_file));
 
     return;
 
 error:
-    if (tmp_fp) {
-        (void) fclose(tmp_fp);
-    	efree(tmp_filename);
-    }
-    if (ZFCSG(fp_tmp)) {
-        (void) fclose(ZFCSG(fp_tmp));
-    }
-	zend_accel_error(ACCEL_LOG_WARNING, "internal failure during file cache save");
+    cleanup_cache_files();
+    EFREE(ZFCSG(file_cached_scripts));
+	zend_accel_error(ACCEL_LOG_ERROR, "internal failure during file cache save");
 }
 
 static size_t copy_file(FILE *in, FILE *out)
@@ -394,9 +379,31 @@ static size_t copy_file(FILE *in, FILE *out)
     return bytes_copied;
 }
 
+#define CLEANUP_FILE(f) \
+    if (ZFCSG(f ## _fp)) { \
+        (void) fclose(ZFCSG(f ## _fp)); \
+        (void) unlink(ZFCSG(f ## _cachename)); \
+        ZFCSG(f ## _fp) = NULL; \
+    }
+/* It's just easier to have a common files cleanup which handles all this cleanup */
+static void cleanup_cache_files(void)
+{ENTER(cleanup_cache_files);
+    CLEANUP_FILE(tmp);
+    CLEANUP_FILE(new);
+    if (ZFCSG(file_cache_dirty)) {
+        CLEANUP_FILE(new);
+    } else if (ZFCSG(in_fp)) {
+        (void) fclose(ZFCSG(in_fp));
+        ZFCSG(in_fp) = NULL;
+    }
+    EFREE(ZFCSG(in_cachename));
+    EFREE(ZFCSG(tmp_cachename));
+    EFREE(ZFCSG(new_cachename));
+}
+
 static int write_index_to_file(FILE *fd)
 {ENTER(write_index_to_file)
-    char                   *obuf, *zbuf, *p;
+    char                   *obuf = NULL, *zbuf = NULL, *p;
     zend_uint               i, len;
 	fc_index_header         header;
     zend_file_cache_record *r;
@@ -419,11 +426,11 @@ static int write_index_to_file(FILE *fd)
     len = (ZCSG(hash).num_direct_entries*sizeof(zend_file_cache_record))  + (4 * sizeof("****"));
     /*    + total in the include_paths key lengths */   
     for (i = 0; i < ZCSG(include_paths).num_entries; i++) {
-        len += ZCSG(include_paths).hash_entries[i].key_length;
+        len += ZCSG(include_paths).hash_entries[i].key_length + 2;
     }
     /*    + total in the hash key lengths */   
     for (i = 0; i < ZCSG(hash).num_entries; i++) {
-        len += ZCSG(hash).hash_entries[i].key_length + 2;
+        len += ZCSG(hash).hash_entries[i].key_length;
     }
     /*    + the indirect entries also store a link index.  Use 8 char worst case */ 
     len += (ZCSG(hash).num_entries - ZCSG(hash).num_direct_entries)*8;
@@ -510,7 +517,7 @@ static int write_index_to_file(FILE *fd)
             l >>= 7;
         }
         *p++ = l;
-        DEBUG3(INDEX, "Interned[%u] (%u):%*2$s", i, interned_bucket->nKeyLength, interned_bucket->arKey);
+        DEBUG3(INTERN, "Interned[%u] (%u):%*2$s", i, interned_bucket->nKeyLength, interned_bucket->arKey);
         memcpy(p, interned_bucket->arKey, interned_bucket->nKeyLength);
         p += interned_bucket->nKeyLength;
         interned_bucket = interned_bucket->pListNext;
@@ -524,7 +531,7 @@ static int write_index_to_file(FILE *fd)
 
     CHECK((header.compressed_size = cache_compress(obuf, &zbuf, header.uncompressed_size)) > 0);
 
-    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  header.compressed_size,
+    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size,
                   header.uncompressed_size, header.script_count, 
                   header.max_include_paths_entry, header.max_hash_entry);
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
@@ -593,8 +600,8 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
         resize_file_cached_script_vec();
     }
 
-    CHECK(ZFCSG(fp_tmp) || 
-          (ZFCSG(fp_tmp) = open_temporary_file(TMP_FILE_PREFIX, &(ZFCSG(temp_cache_file)) TSRMLS_CC)));
+    CHECK(ZFCSG(tmp_fp) || 
+          (ZFCSG(tmp_fp) = open_temporary_file(TMP_FILE_PREFIX, &(ZFCSG(tmp_cachename)) TSRMLS_CC)));
 
     script->dynamic_members.file_cache_index = ndx;
     entry.incache_script_bucket    = bucket;
@@ -605,9 +612,12 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
 
     CHECK((entry.record.compressed_size = cache_compress(module_addr, &zbuf, script->size)) > 0);
 
-    CHECK(fwrite(zbuf, 1, entry.record.compressed_size, ZFCSG(fp_tmp))==entry.record.compressed_size);
+    CHECK(fwrite(zbuf, 1, entry.record.compressed_size, ZFCSG(tmp_fp))==entry.record.compressed_size);
+    CHECK(fwrite(rbvec, 1,entry.record.reloc_bvec_size, ZFCSG(tmp_fp))==entry.record.reloc_bvec_size);
+    DEBUG6(LOAD, "Written %*s at %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
+                 ZFCSG(next_file_cache_offset), script->size,
+                 entry.record.compressed_size, entry.record.reloc_bvec_size);
     ZFCSG(next_file_cache_offset) += entry.record.compressed_size + entry.record.reloc_bvec_size;  
-    CHECK(fwrite(rbvec, 1,entry.record.reloc_bvec_size, ZFCSG(fp_tmp))==entry.record.reloc_bvec_size);
     efree(zbuf); zbuf = NULL;
 
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
@@ -616,7 +626,7 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
 //        zbuf = erealloc(entry.record.full_interned_size);
 //    }
 //    CHECK((entry.record.compressed_interned_size = cache_compress(module_addr, &zbuf, entry.record.full_interned_size)) > 0);
-//    CHECK(fwrite(zbuf, 1, zbuf_length, ZFCSG(fp_tmp))==zbuf_length);
+//    CHECK(fwrite(zbuf, 1, zbuf_length, ZFCSG(tmp_fp))==zbuf_length);
 //    ZFCSG(next_file_cache_offset) += entry.record.compressed_interned_size;
 //    efree(zbuf); zbuf = NULL:
 # endif
@@ -632,10 +642,7 @@ error:
     EFREE(zbuf);
     EFREE(rbvec);
     EFREE(interned_vec);
-    fclose(ZFCSG(fp));
-    if (ZFCSG(fp_tmp)) {
-        fclose(ZFCSG(fp_tmp));
-    }
+    cleanup_cache_files();
 }
 
 void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *bucket TSRMLS_DC)
@@ -651,13 +658,13 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
     }
     offset = script->record_offset;
 	if (offset != ZFCSG(file_next_pos)) {
-		CHECK(fseek(ZFCSG(fp), offset, SEEK_SET)==0);
+		CHECK(fseek(ZFCSG(in_fp), offset, SEEK_SET)==0);
 	}
 
     buf_len = script->record.compressed_size +
               script->record.reloc_bvec_size;
     buf = emalloc(buf_len);
-    CHECK(fread((void *) buf, 1, buf_len, ZFCSG(fp)) == buf_len);
+    CHECK(fread((void *) buf, 1, buf_len, ZFCSG(in_fp)) == buf_len);
     ZFCSG(file_next_pos) = offset + buf_len;
 
     obuf_len = script->record.uncompressed_size;
@@ -677,6 +684,9 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
     relocate_script(script, obuf, reloc_bvec, interned);
     efree(buf);
 	zend_shared_alloc_unlock(TSRMLS_C);
+    DEBUG6(LOAD, "Read %*s from %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
+                 offset, script->record.uncompressed_size,
+                 script->record.compressed_size, script->record.reloc_bvec_size);
 	return;
 
 error:
@@ -685,8 +695,8 @@ error:
     ZFCSG(file_cache_dirty) = 1;
     EFREE(buf);
     EFREE(ZFCSG(file_cached_scripts));
-    fclose(ZFCSG(fp));
-    ZFCSG(fp)=NULL;
+    fclose(ZFCSG(in_fp));
+    ZFCSG(in_fp)=NULL;
 	zend_shared_alloc_unlock(TSRMLS_C);
     return;
 }
@@ -717,7 +727,7 @@ static char *generate_cache_name(TSRMLS_D)
     } 
     if (!filt || filt[0] =='\0') { 
         int l=strlen(repl);
-        cache_path = malloc(l + 1);
+        cache_path = emalloc(l + 1);
         strcpy(cache_path, repl);
         return cache_path;
     } 
@@ -778,7 +788,7 @@ static char *generate_cache_name(TSRMLS_D)
                              "Cache filename too long; Caching is suppressed.");
             } else {
                 i = q - tmp_path;
-                cache_path = malloc(i + 1);
+                cache_path = emalloc(i + 1);
                 strncpy(cache_path, tmp_path, i);
             }
         }
@@ -921,18 +931,18 @@ static void relocate_script(zend_file_cached_script *entry, char *memory_area, c
 // TODO: Need to implement Windows version of this.
 static FILE *open_temporary_file(char* prefix, char **name TSRMLS_DC)
 {ENTER(open_temporary_file)
-    char *tmp_name = emalloc(strlen(ZCG(cache_path)) + strlen(prefix) + 3 + 8 + 6);
+    char *tmp_name = emalloc(strlen(ZFCSG(in_cachename)) + strlen(prefix) + 4 + 8 + 6);
     FILE *tmp_fd;
     char *t;
 	int tmp_file;
 
-    strcpy(tmp_name, ZCG(cache_path));
+    strcpy(tmp_name, ZFCSG(in_cachename));
     t = dirname(tmp_name);
     if (tmp_name != t) {
         strcpy(tmp_name, t);
     }
 
-	sprintf(tmp_name+strlen(tmp_name), "%sXXXXXX", prefix);
+	sprintf(tmp_name+strlen(tmp_name), "/%sXXXXXX", prefix);
 	tmp_file = mkstemp(tmp_name);
 
 	if (tmp_file >0 && (tmp_fd = fdopen(tmp_file, "wbx")) != NULL) {

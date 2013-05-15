@@ -44,7 +44,7 @@ void zend_accel_error(int type, const char *format, ...);
 # define ACCEL_DBG_ENTER  (1<<5)  /* Print out function entry audit */
 # define ACCEL_DBG_COUNTS (1<<6)  /* Print out function summary counts */
 # define ACCEL_DBG_INDEX  (1<<7)  /* Print out cache index save and load */
-# define ACCEL_DBG_INTN   (1<<8)  /* Duplicate intern allocation */
+# define ACCEL_DBG_INTERN (1<<8)  /* Intern allocation */
 # define ACCEL_DBG_ZVAL   (1<<9)  /* ZVAL tracking */
 # define ACCEL_DBG_LOG_OPCODES (1<<10)  /* Opcode loggin */
 
@@ -59,6 +59,7 @@ extern int ACCEL_debug_enter(char *s);
 #define DEBUG3(flg,fmt,a1,a2,a3) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3)
 #define DEBUG4(flg,fmt,a1,a2,a3,a4) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4)
 #define DEBUG5(flg,fmt,a1,a2,a3,a4,a5) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4,a5)
+#define DEBUG6(flg,fmt,a1,a2,a3,a4,a5,a6) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4,a5,a6)
 #else
 # define ENTER(s) 
 #define IF_DEBUG(flg) if (0)
@@ -68,6 +69,7 @@ extern int ACCEL_debug_enter(char *s);
 #define DEBUG3(flg,fmt,a1,a2,a3)
 #define DEBUG4(flg,fmt,a1,a2,a3,a4)
 #define DEBUG5(flg,fmt,a1,a2,a3,a4,a5)
+#define DEBUG6(flg,fmt,a1,a2,a3,a4,a5,a6)
 #endif
 #define NOENTER(s)
 

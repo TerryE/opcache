@@ -2507,9 +2507,6 @@ static void accel_globals_dtor(zend_accel_globals *accel_globals TSRMLS_DC)
 {ENTER(accel_globals_dtor)
 	accel_globals->function_table.pDestructor = NULL;
 	zend_hash_destroy(&accel_globals->function_table);
-    if (accel_globals->cache_path) {
-        free(accel_globals->cache_path);
-    }
 }
 
 static int accel_startup(zend_extension *extension)

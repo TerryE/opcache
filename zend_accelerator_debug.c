@@ -142,17 +142,23 @@ void dump(zend_op_array *op_array)
 #define FUNC_MAX  0x200
 #define FUNC_MASK 0x1ff
 
-static void *get_bp(void) { __asm__ __volatile__("mov %rbp, %rax"); }
-
 static int get_stack_depth(void) {
-    void *bp;
-    bp = (void *)get_bp();
+#if defined(__GNUC__)
+# if SIZEOF_SIZE_T==8
+    register void *fp asm("rbp");
+# else
+    register void *fp asm("ebp");
+# endif
+    void *bp = fp;
     int stack_depth = -1;
     while(bp) {
         bp = *(void **)bp;
         stack_depth++; 
     }
     return stack_depth;
+#else
+    return 1;
+#endif
 }
 
 static int func_compare(const void *a, const void *b)

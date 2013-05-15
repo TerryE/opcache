@@ -29,6 +29,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/time.h>
+#include <stdlib.h>
 
 #if defined(MAP_ANON) && !defined(MAP_ANONYMOUS)
 # define MAP_ANONYMOUS MAP_ANON
@@ -57,6 +59,18 @@ static int create_segments(size_t size, zend_shared_segment ***segments_p, int *
             return ALLOC_FAILURE;
         }
 
+#if defined(ACCEL_DEBUG) && !defined(PHP_WIN32)
+        /* Testing only botch to ensure that the SMA segment starts get randomized to pick any relocation errors */ 
+        {   struct timeval tp = {0,0};
+            if (!gettimeofday(&tp, NULL)) {
+                ulong seed = (unsigned) tp.tv_usec % RAND_MAX, size;
+                srand((uint)seed);
+                size = rand();
+                size = (size * 8 * SEG_ALLOC_SIZE) / RAND_MAX ;
+                (void) malloc(size);
+            }
+        }
+#endif
         segments_count = (requested_size+SEG_ALLOC_SIZE-1) / SEG_ALLOC_SIZE;
         segments_vec = (zend_shared_segment **) calloc(segments_count, sizeof(zend_shared_segment) + sizeof(void *));
         if (!segments_vec) {

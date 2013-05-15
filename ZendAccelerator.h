@@ -275,7 +275,6 @@ typedef struct _zend_accel_globals {
 	/* preallocated buffer for keys */
 	int                     key_len;
 	char                    key[MAXPATHLEN * 8];
-    char                   *cache_path;
 } zend_accel_globals;
 
 typedef struct _zend_accel_shared_globals {
