@@ -163,7 +163,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
         (fp = fopen(ZFCSG(in_cachename), "rb")) == NULL) {
         /* cache isn't a valid file or we can't open it so again fail through */ 
         zend_accel_error(ACCEL_LOG_INFO, "LOAD: cache file %s does not exist. Creating new file.", ZFCSG(in_cachename));
-        DEBUG1(LOAD,"LOAD: Cache file %s does not exist", ZFCSG(in_cachename));
+        DEBUG1(LOAD,"cache file %s does not exist", ZFCSG(in_cachename));
         return 1;
     }
 
@@ -181,11 +181,11 @@ int zend_accel_open_file_cache(TSRMLS_D)
         return 0;
     }
 
-    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size, 
+    DEBUG5(INDEX, "cache file header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size, 
                   header.uncompressed_size, header.script_count, 
                   header.max_include_paths_entry, header.max_hash_entry);
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-    DEBUG3(INDEX,"Cache File header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
+    DEBUG3(INDEX,"cache file header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
                  header.interned_strings_count, header.interned_base_tail);
 #endif    
 
@@ -282,7 +282,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
             } while ((signed) *p++ < 0 );
         }
         (void) accel_new_interned_string(p, key_length, 0 TSRMLS_CC);
-        DEBUG3(INTERN, "New interned[%u] (%u):%s", i, key_length, p);
+        DEBUG3(INTERN, "new[%u] (%u):%s", i, key_length, p);
         p += key_length;
     }
 
@@ -291,7 +291,6 @@ int zend_accel_open_file_cache(TSRMLS_D)
 
     CHECK((p - obuf) == header.uncompressed_size);
 
-//  DEBUG3(LOAD,"LOAD: Cache file %s restored to %p (%u bytes)", cache_path, addr, header.used);
     ZFCSG(file_next_pos) = ZFCSG(file_zero_pos) = sizeof(header) + header.compressed_size;
 	zend_shared_alloc_unlock(TSRMLS_C);    
     return 1;
@@ -517,7 +516,7 @@ static int write_index_to_file(FILE *fd)
             l >>= 7;
         }
         *p++ = l;
-        DEBUG3(INTERN, "Interned[%u] (%u):%*2$s", i, interned_bucket->nKeyLength, interned_bucket->arKey);
+        DEBUG3(INTERN, "copy[%u] (%u):%*2$s", i, interned_bucket->nKeyLength, interned_bucket->arKey);
         memcpy(p, interned_bucket->arKey, interned_bucket->nKeyLength);
         p += interned_bucket->nKeyLength;
         interned_bucket = interned_bucket->pListNext;
@@ -531,11 +530,11 @@ static int write_index_to_file(FILE *fd)
 
     CHECK((header.compressed_size = cache_compress(obuf, &zbuf, header.uncompressed_size)) > 0);
 
-    DEBUG5(INDEX, "Cache File header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size,
+    DEBUG5(INDEX, "cache file header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size,
                   header.uncompressed_size, header.script_count, 
                   header.max_include_paths_entry, header.max_hash_entry);
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-    DEBUG3(INDEX, "Cache File header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
+    DEBUG3(INDEX, "cache file header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
                   header.interned_strings_count, header.interned_base_tail);
 #endif    
 
@@ -614,7 +613,7 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
 
     CHECK(fwrite(zbuf, 1, entry.record.compressed_size, ZFCSG(tmp_fp))==entry.record.compressed_size);
     CHECK(fwrite(rbvec, 1,entry.record.reloc_bvec_size, ZFCSG(tmp_fp))==entry.record.reloc_bvec_size);
-    DEBUG6(LOAD, "Written %*s at %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
+    DEBUG6(LOAD, "written %*s at %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
                  ZFCSG(next_file_cache_offset), script->size,
                  entry.record.compressed_size, entry.record.reloc_bvec_size);
     ZFCSG(next_file_cache_offset) += entry.record.compressed_size + entry.record.reloc_bvec_size;  
@@ -684,7 +683,7 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
     relocate_script(script, obuf, reloc_bvec, interned);
     efree(buf);
 	zend_shared_alloc_unlock(TSRMLS_C);
-    DEBUG6(LOAD, "Read %*s from %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
+    DEBUG6(LOAD, "read %*s from %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
                  offset, script->record.uncompressed_size,
                  script->record.compressed_size, script->record.reloc_bvec_size);
 	return;

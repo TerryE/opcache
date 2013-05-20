@@ -360,6 +360,7 @@ int main() {
 	zend_accelerator_module.c \
 	zend_persist.c \
 	zend_persist_calc.c \
+	zend_persist_prepare.c \
 	zend_shared_alloc.c \
 	zend_accelerator_util_funcs.c \
 	shared_alloc_shm.c \

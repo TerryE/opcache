@@ -46,20 +46,28 @@ void zend_accel_error(int type, const char *format, ...);
 # define ACCEL_DBG_INDEX  (1<<7)  /* Print out cache index save and load */
 # define ACCEL_DBG_INTERN (1<<8)  /* Intern allocation */
 # define ACCEL_DBG_ZVAL   (1<<9)  /* ZVAL tracking */
-# define ACCEL_DBG_LOG_OPCODES (1<<10)  /* Opcode loggin */
 
 #ifdef ACCEL_DEBUG
 extern int accel_directives_debug_flags, accel_directives_debug_audit;
 #define ENTER(s) int dummy_to_be_ignored = accel_directives_debug_audit ? accel_debug_enter(#s) : 0;
 extern int ACCEL_debug_enter(char *s); 
 #define IF_DEBUG(flg) if (accel_directives_debug_flags & ACCEL_DBG_ ## flg)
-#define DEBUG0(flg,fmt) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt)
-#define DEBUG1(flg,fmt,a1) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt, a1)
-#define DEBUG2(flg,fmt,a1,a2) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2)
-#define DEBUG3(flg,fmt,a1,a2,a3) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3)
-#define DEBUG4(flg,fmt,a1,a2,a3,a4) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4)
-#define DEBUG5(flg,fmt,a1,a2,a3,a4,a5) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4,a5)
-#define DEBUG6(flg,fmt,a1,a2,a3,a4,a5,a6) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,fmt,a1,a2,a3,a4,a5,a6)
+#define DEBUG0(flg,fmt) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt)
+#define DEBUG1(flg,fmt,a1) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt, a1)
+#define DEBUG2(flg,fmt,a1,a2) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2)
+#define DEBUG3(flg,fmt,a1,a2,a3) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3)
+#define DEBUG4(flg,fmt,a1,a2,a3,a4) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3,a4)
+#define DEBUG5(flg,fmt,a1,a2,a3,a4,a5) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3,a4,a5)
+#define DEBUG6(flg,fmt,a1,a2,a3,a4,a5,a6) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3,a4,a5,a6)
+# define timersub(a, b, result)                           \
+  do {                                        \
+    (result)->tv_sec = (a)->tv_sec - (b)->tv_sec;                 \
+    (result)->tv_usec = (a)->tv_usec - (b)->tv_usec;                  \
+    if ((result)->tv_usec < 0) {                          \
+      --(result)->tv_sec;                             \
+      (result)->tv_usec += 1000000;                       \
+    }                                         \
+  } while (0)
 #else
 # define ENTER(s) 
 #define IF_DEBUG(flg) if (0)

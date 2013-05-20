@@ -65,6 +65,12 @@ typedef struct _zend_accel_file_cache_globals {
     uint                     interned_skip;
     Bucket                  *interned_base;
 #endif
+    unsigned char           *reloc_bitflag;
+    zend_uint                reloc_bitflag_size;
+    char                    *module_base;
+    zend_uint                module_size;
+    zend_bool                absolute_externals;
+    char                    *reloc_script_image;
 } zend_accel_file_cache_globals;
 
 # define ZFCSG(element)  (accel_shared_globals->fcg.element)

@@ -1077,7 +1077,7 @@ char *accel_make_persistent_key_ex(zend_file_handle *file_handle, int path_lengt
     }
 
 	*key_len = ZCG(key_len) = key_length;
-    DEBUG3(KEY, "Generated persistant key %*.*s",key_length,key_length,ZCG(key));
+    DEBUG3(KEY, "generated persistant key %*.*s",key_length,key_length,ZCG(key));
 	return ZCG(key);
 }
 
