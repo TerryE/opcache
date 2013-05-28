@@ -289,7 +289,7 @@ static void (*orig_interned_strings_restore)(TSRMLS_D);
  * Such interned strings are shared across all PHP processes
  */
 static const char *accel_new_interned_string_for_php(const char *str, int len, int free_src TSRMLS_DC)
-{ENTER(accel_new_interned_string_for_php)
+{NOENTER(accel_new_interned_string_for_php)
 	return str;
 }
 
@@ -337,7 +337,7 @@ static void accel_interned_strings_save_state(TSRMLS_D)
 #endif
 
 const char *accel_new_interned_string(const char *arKey, int nKeyLength, int free_src TSRMLS_DC)
-{ENTER(accel_new_interned_string)
+{NOENTER(accel_new_interned_string)
 /* for now interned strings are supported only for non-ZTS build */
 #ifndef ZTS
 	ulong h;

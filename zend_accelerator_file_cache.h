@@ -65,21 +65,26 @@ typedef struct _zend_accel_file_cache_globals {
     uint                     interned_skip;
     Bucket                  *interned_base;
 #endif
-    unsigned char           *reloc_bitflag;
+    zend_uchar              *reloc_bitflag;
     zend_uint                reloc_bitflag_size;
     char                    *module_base;
+    char                    *module_end;
     zend_uint                module_size;
-    zend_bool                absolute_externals;
+#ifdef ACCEL_DEBUG
     char                    *reloc_script_image;
+#endif
+    zend_bool                absolute_externals;
 } zend_accel_file_cache_globals;
 
 # define ZFCSG(element)  (accel_shared_globals->fcg.element)
 
-extern int  zend_accel_open_file_cache(TSRMLS_D);
-extern void zend_accel_close_file_cache(TSRMLS_D);
-extern void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC);
-extern void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *bucket TSRMLS_DC);
-extern void zend_accel_file_cache_clear_file_cache(void);
+extern int       zend_accel_open_file_cache(TSRMLS_D);
+extern void      zend_accel_close_file_cache(TSRMLS_D);
+extern void      zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC);
+extern void      zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *bucket TSRMLS_DC);
+extern void      zend_accel_file_cache_clear_file_cache(void);
+extern zend_uint zend_accel_script_prepare(zend_persistent_script *script, zend_uchar **rbvec TSRMLS_DC);
+extern void      zend_accel_script_relocate(zend_file_cached_script *entry, char *memory_area, char *rbvec TSRMLS_DC);
 
 #endif /* ZEND_ACCELERATOR_FILE_CACHE_H */
 #endif /* OPCACHE_ENABLE_FILE_CACHE */

@@ -158,6 +158,8 @@ extern int lock_file;
 	#define FREE_ALLOCA(x)	free_alloca(x, use_heap)
 #endif
 
+typedef struct _zend_persistent_script zend_persistent_script;
+
 #ifdef __ACCEL_CLI_PERSISTANCE__
 #define OPCACHE_ENABLE_FILE_CACHE
 #include "zend_accelerator_file_cache.h"
@@ -176,7 +178,7 @@ typedef enum _zend_accel_restart_reason {
 	ACCEL_RESTART_USER    /* restart sheduled by opcache_reset() */
 } zend_accel_restart_reason;
 
-typedef struct _zend_persistent_script {
+struct _zend_persistent_script {
 	ulong          hash_value;
 	char          *full_path;              /* full real path with resolved symlinks */
 	unsigned int   full_path_len;
@@ -207,7 +209,7 @@ typedef struct _zend_persistent_script {
         uint         file_cache_index;
 #endif
 	} dynamic_members;
-} zend_persistent_script;
+};
 
 typedef struct _zend_accel_directives {
 	long           memory_consumption;

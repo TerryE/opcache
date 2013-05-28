@@ -114,8 +114,6 @@ typedef struct _fc_index_header {
 } fc_index_header;
 
 static char     *generate_cache_name(TSRMLS_D);
-static zend_uint make_block_rbvec(void *block, zend_uint block_size, char **rbvec);
-static void      relocate_script(zend_file_cached_script *entry, char *memory_area, char *rbvec, char *interned);
 static void      resize_file_cached_script_vec(void);
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
 static zend_uint make_interned_vars(zend_file_cached_script *script, char **interned_vec);
@@ -589,7 +587,8 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
     char                    *module_addr = script->mem;
     zend_uint                ndx = ZFCSG(file_cached_script_count)++;
     zend_file_cached_script  entry;
-    char                    *zbuf = NULL, *rbvec = NULL, *interned_vec = NULL;
+    char                    *zbuf = NULL, *interned_vec = NULL;
+    zend_uchar              *rbvec = NULL;
               
     if (ZFCSG(file_cache_dirty) || bucket->indirect) { /* ignore file cache once flagged as dirty */
         return;
@@ -607,7 +606,7 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
     entry.record_offset            = ZFCSG(next_file_cache_offset);
 	entry.record.uncompressed_size = script->size;
     entry.record.script_offset     = (char *)script - module_addr;
-    entry.record.reloc_bvec_size   = make_block_rbvec(module_addr, script->size, &rbvec);
+    entry.record.reloc_bvec_size   = zend_accel_script_prepare(script, &rbvec);
 
     CHECK((entry.record.compressed_size = cache_compress(module_addr, &zbuf, script->size)) > 0);
 
@@ -630,7 +629,22 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
 //    efree(zbuf); zbuf = NULL:
 # endif
 
-    relocate_script(&entry, module_addr, rbvec, interned_vec);  /* undo relocation side-effects */
+    zend_accel_script_relocate(&entry, module_addr, rbvec TSRMLS_CC);  /* undo relocation side-effects */
+#ifdef ACCEL_DEBUG
+    do {
+        zend_uint i;
+        IF_DEBUG(RELR) {
+            for (i = 0; i < entry.record.uncompressed_size; i += sizeof(char**)) {
+                if (*(char**)(module_addr + i) != (*(char**)(ZFCSG(reloc_script_image) + i))) {
+                    DEBUG4(RELR,"Reference mismatch at %p (+%08x) to %p vs %p", module_addr + i, i,
+                                *(char**)(module_addr + i),*(char**)ZFCSG(reloc_script_image));
+                }
+            }
+        }
+    } while (0);
+#endif
+    efree(rbvec);
+    efree(ZFCSG(reloc_bitflag));
     ZFCSG(file_cached_scripts)[ndx] = entry;
 
     return;
@@ -680,7 +694,7 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
 //                           script->compressed_interned_size, script->uncompressed_interned_size));
 #endif
     bucket->data = obuf + script->record.script_offset;
-    relocate_script(script, obuf, reloc_bvec, interned);
+    zend_accel_script_relocate(script, obuf, reloc_bvec TSRMLS_CC);
     efree(buf);
 	zend_shared_alloc_unlock(TSRMLS_C);
     DEBUG6(LOAD, "read %*s from %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
@@ -801,7 +815,7 @@ static char *generate_cache_name(TSRMLS_D)
         
     return cache_path;
 }
-
+#if 0
 /* {{{ make_block_rbvec 
    BOTCH WARNING: This code was originally a pull from LPC, but restyled in the ZendOptimizer 
    coding style. The LPC version used intelligent taging to identify valid pointers for relocation. 
@@ -927,6 +941,7 @@ static void relocate_script(zend_file_cached_script *entry, char *memory_area, c
    
     assert((char *)q < memory_area + max_qval);
 }
+#endif
 // TODO: Need to implement Windows version of this.
 static FILE *open_temporary_file(char* prefix, char **name TSRMLS_DC)
 {ENTER(open_temporary_file)

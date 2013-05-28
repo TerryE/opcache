@@ -59,7 +59,8 @@ static int create_segments(size_t size, zend_shared_segment ***segments_p, int *
             return ALLOC_FAILURE;
         }
 
-#if defined(ACCEL_DEBUG) && !defined(PHP_WIN32)
+#if 0
+//#if defined(ACCEL_DEBUG) && !defined(PHP_WIN32)
         /* Testing only botch to ensure that the SMA segment starts get randomized to pick any relocation errors */ 
         {   struct timeval tp = {0,0};
             if (!gettimeofday(&tp, NULL)) {

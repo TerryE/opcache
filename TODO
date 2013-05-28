@@ -5,11 +5,14 @@ issues and I have only really done main path coverage.  I have released it at th
 for feedback from the OPcache developers so that I can align what I am doing to their input before
 even suggesting progress towards a merge.  
 
-I still have to implement / shake down the following, so still a LONG way to go, but as to the dogma
+I still have to implement / shake down the following, so still some way to go, but as to the dogma
 "there's no point in using a file cache because it makes no performance difference", this version
 does show by example that it does, and a material one.
 
 === Explicit relocation ptr tagging ===
+
+   Need to add code to make F/C fingerprint dependent on PHP version and toggle non default op 
+   handler check.
 
 === Bare vs. PHP or Zend wrapped I/O for the file cache ===
 
@@ -27,7 +30,7 @@ does show by example that it does, and a material one.
 
 == PHP 5.4 Tests ==
 
-Still lots to shake down.
+    PHP 5.4 build is now tested beyond 5.3.  Will need to do regression to 5.3 at some point.
 
 == PHP 5.3 Tests ==
 

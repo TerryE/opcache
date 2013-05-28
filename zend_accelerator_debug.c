@@ -221,3 +221,9 @@ int accel_debug_enter(char *s)
 }
 #endif
 
+#if 0
+    struct timeval s,e; // tv_sec & tv_usec
+     (void) clock_gettime(CLOCK_REALTIME, &s); -- needs -lrt option
+    struct timespec s,e; // tv_sec & tv_nsec
+    (void) gettimeofday(&s, NULL);
+#endif
