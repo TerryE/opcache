@@ -221,9 +221,33 @@ int accel_debug_enter(char *s)
 }
 #endif
 
-#if 0
-    struct timeval s,e; // tv_sec & tv_usec
-     (void) clock_gettime(CLOCK_REALTIME, &s); -- needs -lrt option
-    struct timespec s,e; // tv_sec & tv_nsec
-    (void) gettimeofday(&s, NULL);
+void accel_debug_collect_timer(int timer TSRMLS_DC)
+{ENTER(accel_debug_collect_timer)
+#ifdef ACCEL_TIMING
+    struct timeval       e; 
+    accel_timer_stats_t *ss = &ZCG(timer_stats)[timer];
+    zend_ulong           usec;
+    (void) gettimeofday(&e , NULL);
+    usec = (e.tv_sec  - ss->start.tv_sec)*1000000;
+    usec += e.tv_usec - ss->start.tv_usec;
+    ss->total += usec;
+    ss->count++;
 #endif
+}
+void accel_debug_report_timers(TSRMLS_D)
+{ENTER(accel_debug_report_timers)
+#ifdef ACCEL_TIMING
+    accel_timer_stats_t *ss = ZCG(timer_stats);
+    char results[(ACCEL_TIMING_MAX + 1) * (21 + 11) + 1];
+    char *p = results;
+    int i, j;
+    size_t n;
+	TSRMLS_FETCH();
+
+    for (i = 0; i < ACCEL_TIMING_MAX; i++, ss++) {
+        n = sizeof(results) - 1 - (p - results);
+        p += snprintf(p, n, " %lu %u", ss->total, ss->count);
+    }
+    zend_accel_error(ACCEL_LOG_INFO, "timing counters: %s", results);
+#endif
+}

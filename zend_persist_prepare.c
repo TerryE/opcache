@@ -27,7 +27,7 @@
 #include "zend_vm.h"
 #include "zend_constants.h"
 #include "zend_operators.h"
-
+#include "zend_accelerator_util_funcs.h"
 /*
  Overview of Position Independent (PI) and Absolute (ABS) Address processing of the compiled script
  structure hierarchy.
@@ -101,11 +101,13 @@
 #  define LINEDC
 #endif
 
-static dtor_func_t hash_dtors[]={ZVAL_PTR_DTOR, ZEND_FUNCTION_DTOR, ZEND_CLASS_DTOR, (dtor_func_t) 0};
-
 /* Function call used as error hook for debugging */ 
 static void break_here(char **p){
-	DEBUG2(RELR, "invalid reference at %p to %p ", p, *p);
+    IF_DEBUG(ERROR_ON_BREAK_HERE) {
+        zend_accel_error(ACCEL_LOG_FATAL, "Invalid reference at %p", p);
+    } else {
+    	DEBUG2(RELR, "invalid reference at %p to %p ", p, *p);
+    }
 }
 
 static void set_tag(char **p LINEDC) 
@@ -164,6 +166,10 @@ static void hash_prepare(HashTable *ht, zend_prepare_func_t prepare_element TSRM
 
     DEBUG4(RELR, "preparing HT %p (%u elements), %u buckets ptr %p ", ht, ht->nNumOfElements, ht->nTableSize, &ht->arBuckets);
 
+    if (IS_TAGGED(ht->arBuckets)) {
+        return;
+    }
+
 	if (ht->nNumOfElements) { 
 	    while (1) {
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
@@ -203,13 +209,19 @@ static void hash_prepare(HashTable *ht, zend_prepare_func_t prepare_element TSRM
            apart from do an internal relocation on the arBuckets pointer */
 		TAG(ht->arBuckets);
     }
-    for (i=0; i<sizeof(hash_dtors); i++) {
-        if (ht->pDestructor == hash_dtors[i]) {
-            ht->pDestructor == (dtor_func_t)(size_t)i;
-            return;
+    if (ht->pDestructor>(dtor_func_t)zend_accel_hash_dtors_count) {
+        for (i=0;; i++) {
+            if (!zend_accel_hash_dtors[i]) {
+                BREAK_HERE(ht->pDestructor);
+                ht->pDestructor = (dtor_func_t)(size_t) (-1);
+                break;
+            }
+            if (ht->pDestructor == zend_accel_hash_dtors[i]) {
+                ht->pDestructor = (dtor_func_t)(size_t)i + 1;
+                break;
+            }
         }
     }
-    BREAK_HERE(ht->pDestructor);
 }
 
 /* Note that the HT may be embeded statically in another structure so no pointer to it may exist. 
@@ -256,10 +268,10 @@ static void hash_relocate(HashTable *ht)
         ht->pListTail = p;
         RELOCATE_PI_NZ(Bucket,ht->pInternalPointer);
     }
-    if ((size_t)ht->pDestructor < sizeof(hash_dtors)) {
-        ht->pDestructor = hash_dtors[(size_t)ht->pDestructor];
-    } else {
+    if ((size_t)ht->pDestructor == (size_t) (-1)) {
         BREAK_HERE(ht->pDestructor);
+    } else if (ht->pDestructor) {
+        ht->pDestructor = zend_accel_hash_dtors[(size_t)ht->pDestructor - 1];
     }
 }
 
@@ -399,7 +411,7 @@ static void prepare_op_array(zend_op_array *op_array TSRMLS_DC)
 
 static void relocate_op_array(zend_op_array *op_array)
 {ENTER(relocate_op_array)
-    int i;
+    uint i;
     for (i = 0; i<op_array->last; i++) {
         if (!op_array->opcodes[i].handler) {
             ZEND_VM_SET_OPCODE_HANDLER(op_array->opcodes + i);
@@ -424,19 +436,24 @@ static void prepare_class_entry(zend_class_entry **pce TSRMLS_DC)
         return;
     }
 
-//	TAG(*pce);    Don't tag since this is the pData target in a HT 
+    /* Don't tag since the *pce since it is already the pData target in a HT */
+
 	TAG(ce->name);
 	HASH_PREPARE(ce->function_table, prepare_op_array);
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
 	if (ce->default_properties_table) {
 		for (i = 0; i < ce->default_properties_count; i++) {
-			TAG_ZVAL_PP(ce->default_properties_table+i);
+			if (ce->default_properties_table[i]) {
+    			TAG_ZVAL_PP(ce->default_properties_table+i);
+            }
 		}
         TAG(ce->default_properties_table);
 	}
 	if (ce->default_static_members_table) {
 		for (i = 0; i < ce->default_static_members_count; i++) {
-			TAG_ZVAL_PP(ce->default_static_members_table+i);
+			if (ce->default_static_members_table[i]) {
+    			TAG_ZVAL_PP(ce->default_static_members_table+i);
+            }
 		}
         TAG(ce->default_static_members_table);
 	}
@@ -635,7 +652,7 @@ void zend_accel_script_relocate(zend_file_cached_script *entry, char *memory_are
     zend_persistent_script *script = (zend_persistent_script *) entry->incache_script_bucket->data;
     size_t        *q               = (size_t *) memory_area;
     unsigned char *p               = (unsigned char *) rbvec;
-    int            i;
+
     ZFCSG(module_base) = memory_area;
    /* Use a do {} while loop because the first byte offset can by zero; any other is a terminator */
     do {
@@ -701,4 +718,4 @@ zend_uint zend_accel_script_prepare(zend_persistent_script *script, zend_uchar *
 	TAG(script->mem);
     
 	return prepare_memory(rbvec TSRMLS_CC);
-}   
+}

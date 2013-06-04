@@ -6,7 +6,7 @@ PHP_ARG_ENABLE(opcache, whether to enable Zend OPcache support,
 [  --enable-opcache Enable Zend OPcache support], yes)
 
 AC_ARG_ENABLE(opcache-debug,
-[  --enable-opcache-debug Enable Zend OptimizerPlus debugging], 
+[  --enable-opcache-debug Enable Zend OPcache debugging], 
 [
   OPCACHE_DEBUG=yes
 ], 
@@ -15,7 +15,7 @@ AC_ARG_ENABLE(opcache-debug,
 ])
 
 AC_ARG_ENABLE(opcache-file-cache,
-[  --enable-opcache-file-cache Enable OPcache file cache for CLI and CGI], 
+[  --enable-opcache-file-cache Enable Zend OPcache file cache for CLI and CGI], 
 [
   OPCACHE_ENABLE_FILE_CACHE=yes
 ], 
@@ -23,6 +23,14 @@ AC_ARG_ENABLE(opcache-file-cache,
   OPCACHE_ENABLE_FILE_CACHE=no
 ])
 
+AC_ARG_ENABLE(opcache-timing,
+[  --enable-opcache-timing Enable Zend OPcache timing stats], 
+[
+  OPCACHE_TIMING=yes
+], 
+[
+  OPCACHE_TIMING=no
+])
 if test "$PHP_OPCACHE" != "no"; then
 
   if test "$OPCACHE_PLUS_DEBUG" != "no"; then
@@ -31,6 +39,10 @@ if test "$PHP_OPCACHE" != "no"; then
 
   if test "$OPCACHE_ENABLE_FILE_CACHE" != "no"; then
     AC_DEFINE(__ACCEL_CLI_PERSISTANCE__, 1, [ ])
+  fi
+
+  if test "$OPCACHE_TIMING" != "no"; then
+    AC_DEFINE(__ACCEL_TIMING_, 1, [ ])
   fi
 
   AC_CHECK_FUNC(mprotect,[

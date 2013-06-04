@@ -138,6 +138,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
     zend_file_cache_record *r;
     zend_accel_hash_entry  *bucket;
 
+    SET_TIMER(NDXLOAD);
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
     ZFCSG(interned_skip) = ZCSG(interned_strings).nNumOfElements;
     ZFCSG(interned_base) = ZCSG(interned_strings).pListTail;
@@ -166,6 +167,9 @@ int zend_accel_open_file_cache(TSRMLS_D)
     }
 
     ZFCSG(in_fp) = fp;
+
+    SET_TIMER(CACHEREAD);
+
     if (fread((void *) &header, 1, sizeof(header), fp) != sizeof(header)
         || memcmp(header_fingerprint, header.fingerprint, FINGERPRINT_SIZE) != 0 
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO && !defined(ZTS)
@@ -193,6 +197,8 @@ int zend_accel_open_file_cache(TSRMLS_D)
     cbuf = emalloc(header.compressed_size);
     errmsg = "unable to read index";
     CHECK(fread((void *) cbuf, 1, header.compressed_size, fp) == header.compressed_size);
+
+    COLLECT_TIMER(CACHEREAD);
 
     /* move and expand index to SMA because its strings are used to generate the SMA hashes */
     obuf_len = header.uncompressed_size;
@@ -291,6 +297,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
 
     ZFCSG(file_next_pos) = ZFCSG(file_zero_pos) = sizeof(header) + header.compressed_size;
 	zend_shared_alloc_unlock(TSRMLS_C);    
+    COLLECT_TIMER(NDXLOAD);
     return 1;
 
 error:
@@ -299,6 +306,7 @@ error:
     ZFCSG(file_cache_dirty) = 1;
     EFREE(cbuf);
     cleanup_cache_files();
+    COLLECT_TIMER(NDXLOAD);
     return 0;
 }
 
@@ -313,6 +321,8 @@ void zend_accel_close_file_cache(TSRMLS_D)
         EFREE(ZFCSG(file_cached_scripts));
         return;
     }
+
+    SET_TIMER(CACHEWRITE);
 
     CHECK(ZFCSG(new_fp) = open_temporary_file(TMP_FILE_PREFIX, &ZFCSG(new_cachename) TSRMLS_CC));
     
@@ -354,6 +364,8 @@ void zend_accel_close_file_cache(TSRMLS_D)
 	}
     cleanup_cache_files();
     EFREE(ZFCSG(file_cached_scripts));
+
+    COLLECT_TIMER(CACHEWRITE);
 
     return;
 
@@ -540,7 +552,6 @@ static int write_index_to_file(FILE *fd)
     CHECK(fwrite(zbuf, 1, header.compressed_size, fd) == header.compressed_size);
     efree(obuf);
     efree(zbuf);
-
     return 1;
 
 error:
@@ -594,9 +605,23 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
         return;
     }
 
+    /* If the process has forked, turn off cache write in the child and treat the filecache as R/O */
+    if (ZFCSG(pid) == 0) {
+        ZFCSG(pid) = getpid();
+    } else if (ZFCSG(pid) != getpid()) {
+        if (ZFCSG(tmp_fp)) {
+            (void)fclose(ZFCSG(tmp_fp));
+            ZFCSG(tmp_fp) = NULL;
+        }
+        return;
+    }
+
+    SET_TIMER(PREPSAVE);
+
     if (ndx >= ZFCSG(file_cached_script_alloc)) {
         resize_file_cached_script_vec();
     }
+
 
     CHECK(ZFCSG(tmp_fp) || 
           (ZFCSG(tmp_fp) = open_temporary_file(TMP_FILE_PREFIX, &(ZFCSG(tmp_cachename)) TSRMLS_CC)));
@@ -610,8 +635,13 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
 
     CHECK((entry.record.compressed_size = cache_compress(module_addr, &zbuf, script->size)) > 0);
 
+    SET_TIMER(CACHEWRITE);
+
     CHECK(fwrite(zbuf, 1, entry.record.compressed_size, ZFCSG(tmp_fp))==entry.record.compressed_size);
     CHECK(fwrite(rbvec, 1,entry.record.reloc_bvec_size, ZFCSG(tmp_fp))==entry.record.reloc_bvec_size);
+
+    COLLECT_TIMER(CACHEWRITE);
+
     DEBUG6(LOAD, "written %*s at %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
                  ZFCSG(next_file_cache_offset), script->size,
                  entry.record.compressed_size, entry.record.reloc_bvec_size);
@@ -646,7 +676,7 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
     efree(rbvec);
     efree(ZFCSG(reloc_bitflag));
     ZFCSG(file_cached_scripts)[ndx] = entry;
-
+    COLLECT_TIMER(PREPSAVE);
     return;
 
 error:
@@ -656,6 +686,7 @@ error:
     EFREE(rbvec);
     EFREE(interned_vec);
     cleanup_cache_files();
+    COLLECT_TIMER(PREPSAVE);
 }
 
 void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *bucket TSRMLS_DC)
@@ -677,7 +708,13 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
     buf_len = script->record.compressed_size +
               script->record.reloc_bvec_size;
     buf = emalloc(buf_len);
+
+    SET_TIMER(CACHEREAD);
+
     CHECK(fread((void *) buf, 1, buf_len, ZFCSG(in_fp)) == buf_len);
+
+    COLLECT_TIMER(CACHEREAD);
+
     ZFCSG(file_next_pos) = offset + buf_len;
 
     obuf_len = script->record.uncompressed_size;
@@ -815,134 +852,6 @@ static char *generate_cache_name(TSRMLS_D)
         
     return cache_path;
 }
-#if 0
-/* {{{ make_block_rbvec 
-   BOTCH WARNING: This code was originally a pull from LPC, but restyled in the ZendOptimizer 
-   coding style. The LPC version used intelligent taging to identify valid pointers for relocation. 
-   This version simply identifies any size_t value in the address range of the block or the interned
-   pool as an block-internal pointer. This works for now on 64bit architectures as a block addr is
-   typically a pretty high 64bit value (eg. 0x00007f90cbdf3000) which won't be in the block unless
-   it is an internal pointer. This will need to be fixed in the next commit point. 
-   It also exploits the fact that all targets are size_t aligned */
-static zend_uint make_block_rbvec(void *addr, zend_uint size, char **rbvec)
-{ENTER(make_block_rbvec)
-    void **p, **lastp, **pend;
-    unsigned char *reloc_bvec, *q;
-    zend_uint   delta, cnt = 1;
-
-    /* 1st pass to compute size of the relocation vector */
-    for (p = (void **)addr, lastp = p, pend = p + (size / sizeof(void*)); p < pend; p++) {
-        if (!*p) continue;
-        delta = 0;
-        if ( ((size_t)((char *)*p - (char *)addr)) < size
-#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-             || IS_INTERNED((char *) *p)
-#endif
-           ) {
-            cnt++;
-            /* add extra bytes when multi-byte sequences are used */
-            for (delta = (zend_uint) (p - lastp); delta>=0x80; delta >>= 7, cnt++) { }
-            lastp = p;
-        }
-    }
-
-	reloc_bvec = (unsigned char *) malloc(cnt);
-	if (!reloc_bvec) {
-		zend_accel_error(ACCEL_LOG_ERROR, "malloc() failed");
-		return 0;
-	}
-
-    /* 2nd pass to generate the relocation byte vector */
-    for (p = (void **)addr, q = reloc_bvec, lastp = p, pend = p + (size / sizeof(void*)); 
-         p < pend; p++) {
-        /* The target if in the module or interned pool is itself size_t aligned, so the PIC
-           form is the size_t units from the base module addr / interned pool start. */
-        if ( ((size_t)((char *)*p - (char *)addr)) < size ) {
-            *p    = (void *) (*(size_t **)p - (size_t *)addr); /* convert ptr to offset */
-#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-        } else if (IS_INTERNED(*(char **) p)) {
-            *p    = (void *) (ADDR_HI_SET + (*(size_t **)p - (size_t *)ZCSG(interned_strings_start)));
-#endif
-        } else {
-            continue;
-        }
-        delta = (zend_uint) (size_t) (p - lastp);
-        if (delta <= 0x7f) { /* the typical case */
-            *q++ = (unsigned char) delta;
-        } else {             /* handle the multi-byte cases */
-           /* Emit multi-bytes lsb first with 7 bits sig; high-bit set to indicate follow-on. */
-            *q++ = (unsigned char)(delta & 0x7f) | 0x80;
-            if (delta <= 0x3fff) {
-                *q++ = (unsigned char)((delta>>7)  & 0x7f);
-            } else if (delta <= 0x1fffff) {
-                *q++ = (unsigned char)((delta>>7)  & 0x7f) | 0x80;
-                *q++ = (unsigned char)((delta>>14) & 0x7f);    
-            } else if (delta <= 0xfffffff) {
-                *q++ = (unsigned char)((delta>>7)  & 0x7f) | 0x80;
-                *q++ = (unsigned char)((delta>>14) & 0x7f) | 0x80;
-                *q++ = (unsigned char)((delta>>21) & 0x7f);    
-            } else {
-                zend_accel_error(ACCEL_LOG_ERROR, 
-                                 "Fatal: invalid offset %u found during internal copy", delta);
-                return 0;
-            }
-        }
-        lastp = p;
-    }
-    *q++ = '\0'; /* add an end marker so the reverse process can terminate */
-    assert((zend_uchar *)q == reloc_bvec+cnt);
-    *rbvec = (char *)  reloc_bvec;
-    return cnt;
-}
-/* }}} */
-
-/* {{{ relocate_sma. The relocation byte vector (rbvec) contains the byte offset (in size_t units)
-       of each * pointer in the SMA to be relocated. As these pointers are a lot denser than every *
-       127 longs (1016 bytes), the encoding uses a simple high-bit multi-byte escape to * encode
-       exceptions. Also note that 0 is used as a terminator excepting that the first * entry can
-       validly be '0'. */
-// TODO: Add interned vector processing
-static void relocate_script(zend_file_cached_script *entry, char *memory_area, char *rbvec, char *interned)
-{ENTER(relocate_script)
-    zend_persistent_script *script = (zend_persistent_script *) entry->incache_script_bucket->data;
-    size_t         addr_offset     = (size_t) memory_area;
-    size_t        *q               = (size_t *) memory_area;
-    size_t         max_qval        = script->size;
-    unsigned char *p               = (unsigned char *) rbvec;
-   /* Use a do {} while loop because the first byte offset can by zero; any other is a terminator */
-    do {
-        if (p[0]<128) {         /* offset <1K the typical case */
-            q += *p++;
-        } else if (p[1]<128) {  /* offset <128Kb */
-            q += (zend_uint)(p[0] & 0x7f) + (((zend_uint)p[1])<<7);
-            p += 2;
-        } else if (p[2]<128) {  /* offset <16Mb */
-            q += (zend_uint)(p[0] & 0x7f) + ((zend_uint)(p[1] & 0x7f)<<7) + (((zend_uint)p[2])<<14);
-            p += 3;
-        } else if (p[3]<128) {  /* offset <2Gb Ho-ho */
-            q += (zend_uint)(p[0] & 0x7f)      + ((zend_uint)(p[1] & 0x7f)<<7) + 
-                ((zend_uint)(p[2] & 0x7f)<<14) + (((zend_uint)p[3])<<21);
-            p += 4;
-        }
-        if (*q < max_qval) {
-            *q = (size_t) ((size_t *) addr_offset + *q);
-            continue;
-        }
-#if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-        if (*q & (size_t) ADDR_HI_SET) {
-            *q = (size_t)((size_t *)ZCSG(interned_strings_start) + (*q ^ ADDR_HI_SET));
-            continue;
-        }
-#endif
-        zend_accel_error(ACCEL_LOG_ERROR, 
-                         "Relocation error: invalid offset %p at offset %08lx in SMA", 
-                         *((void **)q), (char *)q - (char *)addr_offset);
-    } while (*p != '\0');
-   
-    assert((char *)q < memory_area + max_qval);
-}
-#endif
-// TODO: Need to implement Windows version of this.
 static FILE *open_temporary_file(char* prefix, char **name TSRMLS_DC)
 {ENTER(open_temporary_file)
     char *tmp_name = emalloc(strlen(ZFCSG(in_cachename)) + strlen(prefix) + 4 + 8 + 6);
@@ -975,6 +884,8 @@ int cache_compress(const char* source, char** dest, int source_size)
     int algo = ZCG(accel_directives).compression_algo;
     TSRMLS_FETCH();
 
+    SET_TIMER(DEFLATE);
+
     if (algo == 1) { /* Standard zlib */
         zend_ulong dest_length = dest_size = compressBound(source_size);
 	    *dest = emalloc(dest_size);
@@ -989,11 +900,13 @@ int cache_compress(const char* source, char** dest, int source_size)
         dest_length = algo == 2 ? LZ4_compress(source, *dest, source_size) :
                                   LZ4_compressHC(source, *dest, source_size);
         if (dest_length) {
+            COLLECT_TIMER(DEFLATE);
             return dest_length;
         }
     }
 
     efree(*dest);
+
     *dest = NULL;
     return 0;
 }
@@ -1001,6 +914,8 @@ int cache_compress(const char* source, char** dest, int source_size)
 int cache_decompress(const char* source, char* dest, int source_size, int dest_size)
 {ENTER(cache_decompress)
     TSRMLS_FETCH();
+
+    SET_TIMER(INFLATE);
 
     if (!source || !dest || !source_size || !dest_size) {
         return 0;
@@ -1011,14 +926,17 @@ int cache_decompress(const char* source, char* dest, int source_size, int dest_s
 
         if (uncompress((unsigned char *)dest, &dest_length, (unsigned char *)source, source_size) == Z_OK &&
             dest_size > 0 && dest_length == (unsigned) dest_size) {
+            COLLECT_TIMER(INFLATE);
             return 1;
         }
     } else if (ZCG(accel_directives).compression_algo == 2 ||
                ZCG(accel_directives).compression_algo == 3) { /* LZ4 & LZ4HC compress */
         if (dest_size == LZ4_decompress_safe(source, dest, source_size, dest_size)) {
+            COLLECT_TIMER(INFLATE);
             return 1;
         }
     }
+
     return 0;
 }
 

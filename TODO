@@ -1,18 +1,66 @@
 == Health Warning ==
 
-This is a preliminary release that I wouldn't consider as even alpha code.  It still has known 
-issues and I have only really done main path coverage.  I have released it at this stage primarily
-for feedback from the OPcache developers so that I can align what I am doing to their input before
-even suggesting progress towards a merge.  
+This is a preliminary release that I not consider as even alpha code re core functionality though I
+have only really done main path coverage. I have released it at this stage primarily for feedback
+from the OPcache developers so that I can align what I am doing to their input before even
+suggesting progress towards a merge.  
 
 I still have to implement / shake down the following, so still some way to go, but as to the dogma
 "there's no point in using a file cache because it makes no performance difference", this version
 does show by example that it does, and a material one.
 
+
+In ZendAccelerator.c ~line 1300 (" check blacklist right after ensuring that file was opened"), the
+blacklisted file is compiled and the returned op_array hierarchy is then dumped with a NULL return
+from compile_and_cache_file(). What's the reasoning for this? The NULL return cascades up through
+compile_and_cache_file() through persistent_compile_file() -- need to work through in debugger before
+raising issue.
+
 === Explicit relocation ptr tagging ===
 
-   Need to add code to make F/C fingerprint dependent on PHP version and toggle non default op 
-   handler check.
+   This functionality now seems to be working reasonably rebustly. Need to add code to make F/C
+   fingerprint dependent on PHP version and toggle non default op handler check.
+
+   Drill down on Invalid reference failures: 
+        tests/classes:
+            bug30140.php
+            bug46246.php
+            dtor_scope.php
+            lsb_018.php
+
+   Drill down on "internal failure during file cache save" failure:
+ 
+    *   ext/standard/tests/http/ignore_errors.phpt.  This raises an interesting issue in that the
+        script does requires server.inc, which does a fork.  This would cause problems with the 
+        temporary cache file.  This need to be only written to by the creating pid and closed 
+        otherwise.  Probbly the easiest way is to store the PID on tempfile creation and check this
+        before each write.  ** now inmplemented and fixes this issues.
+
+There are also some subtle differences between PHP 5.4.9-4ubuntu2 and my dev PHP 5.4.9, e.g. the
+following script
+
+    <?php
+    var_dump(array("sd"));
+    var_dump("hello\r\nthere");
+
+on Ubuntu PHP generates:
+
+    array(1) {
+      [0] =>
+      string(2) "sd"
+    }
+    string(12) "hello\r\nthere"
+
+and on mine generates (even with opcache disabled):
+
+    array(1) {
+      [0]=>
+      string(2) "sd"
+    }
+    string(12) "hello
+    there"
+
+Note the dropping of the space between the index and the =>, and the failure to escape \r\n.
 
 === Bare vs. PHP or Zend wrapped I/O for the file cache ===
 
@@ -47,9 +95,6 @@ replaced with a set which exercises the OPcache-specific paths.
 Nonetheless, MLC OPcache seems to work well with the core, Zend and ext/standard tests subject to 
 the following known failures:  
 
-* bug43450 gives false fail on the cache-prime run as compilation does memory_usage checks that valid 
-emalloc done by the OPcache alloactor throw the test off.
-
 * All tests which generate compile warnings on the cache-prime fail on the on cached passes as 
   compile errors aren't generated for pre-compiled code.
 
@@ -69,11 +114,12 @@ modules turned off and the cache deleted.
 Prime VFAT cache, 100 reps uncached; prime file and VFAT cache, 100 reps cached
 
 cd /var/www/drmyhill/maintenance
+PHP="php -d opcache.debug_flags=0x800 -d opcache.log_verbosity_level=5"
 
-/opt/bin/php -d opcache.enable=0 runJobs.php 
-(for ((i=0;i<100;i=i+1)); do time /opt/bin/php -d opcache.enable=0 runJobs.php; done ) |& grep real
+$PHP -d opcache.enable=0 runJobs.php 
+(for ((i=0;i<100;i=i+1)); do $PHP -d opcache.enable=0 runJobs.php; done ) |& grep  -i timing > /tmp/xx.lst
+echo >> /tmp/xx.lst
+(for ((i=0;i<100;i=i+1)); do rm -f runJobs.cache; $PHP runJobs.php; done ) |& grep -i timing >> /tmp/xx.lst
+echo >> /tmp/xx.lst
+(for ((i=0;i<100;i=i+1)); do $PHP runJobs.php; done ) |& grep -i timing >> /tmp/xx.lst
 
-/opt/bin/php -d opcache.cache_pattern='(.*?)\.php' -d opcache.cache_file='$1.cache' \
-                                              -d opcache.validate_timestamps=0 runJobs.php
-(for ((i=0;i<100;i=i+1)); do time /opt/bin/php -d opcache.cache_pattern='(.*?)\.php' -d opcache.cache_file='$1.cache' \
-                                              -d opcache.validate_timestamps=0 runJobs.php; done ) |& grep real

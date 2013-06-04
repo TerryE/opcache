@@ -255,7 +255,7 @@ ZEND_INI_BEGIN()
 #ifdef ZEND_WIN32
 	STD_PHP_INI_ENTRY("opcache.mmap_base", NULL, PHP_INI_SYSTEM,	OnUpdateString,	                             accel_directives.mmap_base,                 zend_accel_globals, accel_globals)
 #endif
-#ifdef ACCEL_DEBUG
+#if defined(ACCEL_DEBUG) || defined(ACCEL_TIMING)
 	STD_PHP_INI_ENTRY("opcache.debug_flags", "0"   , PHP_INI_SYSTEM, OnUpdateLong, 
 accel_directives.debug_flags,               zend_accel_globals, accel_globals)
 #endif

@@ -57,6 +57,7 @@ typedef struct _zend_accel_file_cache_globals {
     char                    *new_cachename;
     FILE                    *tmp_fp;
     char                    *tmp_cachename;
+    pid_t                    pid;
     struct stat              fp_stat_block;
     size_t                   file_next_pos;
     size_t                   file_zero_pos;
