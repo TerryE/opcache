@@ -312,7 +312,6 @@ static void prepare_op_array(zend_op_array *op_array TSRMLS_DC)
     DEBUG3(RELR, "preparing op_array %p (%u oplines ptr %p) ", op_array, op_array->last, &op_array->opcodes);
 
 	TAG_NZ(op_array->filename);
-/*TAG(op_array->opcodes);*/
 
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
 	if (op_array->literals) {

@@ -9,12 +9,8 @@ I still have to implement / shake down the following, so still some way to go, b
 "there's no point in using a file cache because it makes no performance difference", this version
 does show by example that it does, and a material one.
 
+== Known bugs ==
 
-In ZendAccelerator.c ~line 1300 (" check blacklist right after ensuring that file was opened"), the
-blacklisted file is compiled and the returned op_array hierarchy is then dumped with a NULL return
-from compile_and_cache_file(). What's the reasoning for this? The NULL return cascades up through
-compile_and_cache_file() through persistent_compile_file() -- need to work through in debugger before
-raising issue.
 
 === Explicit relocation ptr tagging ===
 
@@ -28,16 +24,61 @@ raising issue.
             dtor_scope.php
             lsb_018.php
 
-   Drill down on "internal failure during file cache save" failure:
- 
-    *   ext/standard/tests/http/ignore_errors.phpt.  This raises an interesting issue in that the
-        script does requires server.inc, which does a fork.  This would cause problems with the 
-        temporary cache file.  This need to be only written to by the creating pid and closed 
-        otherwise.  Probbly the easiest way is to store the PID on tempfile creation and check this
-        before each write.  ** now inmplemented and fixes this issues.
+=== Bare vs. PHP or Zend wrapped I/O for the file cache ===
 
-There are also some subtle differences between PHP 5.4.9-4ubuntu2 and my dev PHP 5.4.9, e.g. the
-following script
+=== Script invalidation and resource exhaustion paths ===
+
+=== Make tests/std-tests.sh configuration independant ===
+
+=== Rewrite tests/*.phpt scripts === 
+
+== PHP 5.4 Tests ==
+
+PHP 5.4 build is now tested beyond 5.3. This is a non-ZTS build so is blind to some ZTS bugs. 
+However the full test suite gives the following results: 
+
+    Number of tests : 12147
+    Tests skipped   :  2709
+    Tests passed    :  9307
+    Expected fail   :    38
+    Tests failed    :    93
+      identically on both                           :  79  
+      ditto but with time / run dependent change    :   3     
+      reflection due to Opcache setting             :   8
+      hard errors which are all base OPcache bugs   :   3
+        tests/output/ob_017              Output diffs
+        tests/output/ob_start_basic_004  Output diffs
+        Zend/tests/ns_026                error drops function to lc: foo\foo\bar() vs Foo\Foo\Bar()
+
+== PHP 5.3 Tests ==
+
+    Will need to do regression to 5.3 at some point. This is a maintainer ZTS build.
+
+== Other code and test variants ==
+
+I am defering all work on the following until I get some working engagement / traction
+with the Zend team on MLC OPcache.
+*   32-bit build tests
+*   PHP 5.2 
+*   PHP 5.5
+*   Windows API builds
+ 
+== Test Framework ==
+
+I can't use the standard test framework for OPcache as I need to test multiple test paths (e.g. 
+priming cache, extending cache, readonly cache). To this end, I have added an extra wrapper
+tests/std-test.sh which does this, and at the moment this is still specific to my config. However, I
+really need to extend the functionality of the run-tests.php script to be cache-aware (e.g. at the
+moment is always generates a .php script from the .phpt which means that I can't path test
+validation.) So to filter out false fails I rerun these with standard Ubuntu PHP 5.4.9 with and
+without the opcache extension loaded and discount those which fail identically on both or fail with
+a time / run dependent change that can be expected by examination of the test script.
+
+
+== Known issue on PHP variant ==
+
+There are also some subtle differences between PHP 5.4.9-4ubuntu2 and my dev PHP 5.4.9 compile, 
+e.g. the following script
 
     <?php
     var_dump(array("sd"));
@@ -51,7 +92,7 @@ on Ubuntu PHP generates:
     }
     string(12) "hello\r\nthere"
 
-and on mine generates (even with opcache disabled):
+and on mine dev build generates (even with opcache disabled):
 
     array(1) {
       [0]=>
@@ -62,44 +103,6 @@ and on mine generates (even with opcache disabled):
 
 Note the dropping of the space between the index and the =>, and the failure to escape \r\n.
 
-=== Bare vs. PHP or Zend wrapped I/O for the file cache ===
-
-=== Script invalidation and resource exhaustion paths ===
-
-=== Make tests/std-tests.sh configuration independant ===
-
-=== Rewrite tests/*.phpt scripts === 
-
-=== 32-bit build tests ===
-
-=== PHP 5.2 and 5.5 code variants ===
-
-=== Windows API builds ===
-
-== PHP 5.4 Tests ==
-
-    PHP 5.4 build is now tested beyond 5.3.  Will need to do regression to 5.3 at some point.
-
-== PHP 5.3 Tests ==
-
-I can't use the standard test framework for OPcache as I need to test multiple test paths (e.g. 
-priming cache, extending cache, readonly cache).  To this end, I have added an extra wrapper 
-tests/std-test.sh which does this, and at the moment this is still specific to my config.  However, 
-I really need to extend the functionality of the run-tests.php script to be cache-aware (e.g. at the
-moment is always generates a .php script from the .phpt which means that I can't path test
-validation.)  
-
-The tests that I have in my tests directory are largely a hang-over from LPC and these need to be
-replaced with a set which exercises the OPcache-specific paths. 
-
-Nonetheless, MLC OPcache seems to work well with the core, Zend and ext/standard tests subject to 
-the following known failures:  
-
-* All tests which generate compile warnings on the cache-prime fail on the on cached passes as 
-  compile errors aren't generated for pre-compiled code.
-
-There are no known other test errors at this stage.
-    
 
 == Response to resource exhaustion and invalidated cache ==
 
@@ -111,7 +114,8 @@ modules turned off and the cache deleted.
 
 == Simple Benchmark ==
 
-Prime VFAT cache, 100 reps uncached; prime file and VFAT cache, 100 reps cached
+Prime VFAT cache, 100 reps uncached; prime file and VFAT cache, 100 reps cached.  Build with debug
+or timing enabled and set debug_flags 0x800 to report on internals timing.
 
 cd /var/www/drmyhill/maintenance
 PHP="php -d opcache.debug_flags=0x800 -d opcache.log_verbosity_level=5"

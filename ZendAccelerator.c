@@ -1238,6 +1238,7 @@ static zend_persistent_script *cache_script_in_shared_memory(zend_persistent_scr
 			(char *)new_persistent_script->mem + new_persistent_script->size,
 			ZCG(mem));
 	}
+    DEBUG2(MEMUSE, "Script Alloc:%u %s", memory_used, new_persistent_script->full_path);
 
 	new_persistent_script->dynamic_members.checksum = zend_accel_script_checksum(new_persistent_script);
 

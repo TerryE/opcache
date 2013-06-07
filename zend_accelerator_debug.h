@@ -40,7 +40,7 @@ void zend_accel_error(int type, const char *format, ...);
 # define ACCEL_TIMING 1
 #endif
 
-#define ACCEL_DBG_ALLOC  (1<<0) /* Storage Allocation */
+#define ACCEL_DBG_ALLOC  (1<<0)  /* Storage Allocation */
 #define ACCEL_DBG_KEY    (1<<1)  /* Key resolution */
 #define ACCEL_DBG_HASH   (1<<2)  /* Hash Functions */
 #define ACCEL_DBG_RELR   (1<<3)  /* Missed relocation report */
@@ -50,7 +50,8 @@ void zend_accel_error(int type, const char *format, ...);
 #define ACCEL_DBG_INDEX  (1<<7)  /* Print out cache index save and load */
 #define ACCEL_DBG_INTERN (1<<8)  /* Intern allocation */
 #define ACCEL_DBG_ZVAL   (1<<9)  /* ZVAL tracking */
-#define ACCEL_DBG_TIMING (1<<11)  /* Collect timing stats */
+#define ACCEL_DBG_MEMUSE (1<<10) /* Report on SHM memory use */
+#define ACCEL_DBG_TIMING (1<<11) /* Collect timing stats */
 #define ACCEL_DBG_ERROR_ON_BREAK_HERE   (1<<12)  /* Force error on Break Here call */
 
 #ifdef ACCEL_TIMING
