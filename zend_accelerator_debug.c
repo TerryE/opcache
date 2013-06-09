@@ -242,7 +242,6 @@ void accel_debug_report_timers(TSRMLS_D)
     char *p = results;
     int i, j;
     size_t n;
-	TSRMLS_FETCH();
 
     for (i = 0; i < ACCEL_TIMING_MAX; i++, ss++) {
         n = sizeof(results) - 1 - (p - results);

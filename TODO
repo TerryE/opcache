@@ -111,6 +111,24 @@ ZSMMG(wasted_shared_memory) and schedule zend_accel_schedule_restart_if_necessar
 map onto file-cache actions: once the cache is suspect opcache should be disabled, all saving of 
 modules turned off and the cache deleted.
 
+== Rationalizing Interned Pool ==
+
+OPcache creates its own interned pool.  Whilst this has significant benefits for persistent modes,
+it has none in the per-process / request mode of MLC-OPcache.  TBD -- backing this out.
+
+== Update Cache Fingerprint Logic ==
+
+This is currently behind the description in https://github.com/TerryE/opcache/wiki/MLC-OPcache-details
+
+== Use of uninitialized_bucket ==
+
+zend_persist.c:133 replaces ht->arBuckets = NULL by ht->arBuckets = (Bucket**)&uninitialized_bucket
+
+Need to explore further  (not yet implemented) !!!
+
+== SMA size is now a size_t ==
+ zend_shared_alloc_startup(size_t requested_size)
+
 
 == Simple Benchmark ==
 

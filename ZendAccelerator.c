@@ -120,11 +120,11 @@ static char *accel_php_resolve_path(const char *filename, int filename_length, c
 #endif
 
 #ifdef OPCACHE_ENABLE_FILE_CACHE
-#define FILE_CACHE_WRITE(bucket) if (ZSMMG(use_file_cache)) { \
+#  define FILE_CACHE_WRITE(bucket) if (ZSMMG(use_file_cache)) { \
     zend_accel_save_module_to_file(bucket TSRMLS_CC); \
     }
-#define HASH_FIND(k, kl) zend_accel_file_cache_hash_find(k, kl TSRMLS_CC)
-#define HASH_FIND_ENTRY(k, kl)	zend_accel_file_cache_hash_find_entry(k, kl TSRMLS_CC)
+#  define HASH_FIND(k, kl) zend_accel_file_cache_hash_find(k, kl TSRMLS_CC)
+#  define HASH_FIND_ENTRY(k, kl)	zend_accel_file_cache_hash_find_entry(k, kl TSRMLS_CC)
 static inline zend_accel_hash_entry* zend_accel_file_cache_hash_find_entry(char *k, zend_uint kl TSRMLS_DC)
 {
     zend_accel_hash_entry *bucket = zend_accel_hash_find_entry(&ZCSG(hash), k, kl);
@@ -143,10 +143,14 @@ static inline void* zend_accel_file_cache_hash_find(char *k, zend_uint kl TSRMLS
     zend_accel_hash_entry *bucket = zend_accel_file_cache_hash_find_entry(k, kl TSRMLS_CC);
     return bucket ? bucket->data : NULL; 		
 }
+#  define OPEN_FILE_CACHE() zend_accel_open_file_cache(TSRMLS_C)
+#  define CLOSE_FILE_CACHE() zend_accel_close_file_cache(TSRMLS_C)
 #else
-#define FILE_CACHE_WRITE(bucket,script)
-#define HASH_FIND(k, kl) zend_accel_hash_find(&ZCSG(hash), k, kl);
-#define HASH_FIND_ENTRY(k, kl)	zend_accel_hash_find_entry(&ZCSG(hash), k, kl);
+#  define FILE_CACHE_WRITE(bucket,script)
+#  define HASH_FIND(k, kl) zend_accel_hash_find(&ZCSG(hash), k, kl);
+#  define HASH_FIND_ENTRY(k, kl) zend_accel_hash_find_entry(&ZCSG(hash), k, kl)
+#  define OPEN_FILE_CACHE()
+#  define CLOSE_FILE_CACHE()
 #endif
 
 #ifdef ACCEL_TIMING
@@ -588,7 +592,6 @@ static inline void accel_deactivate_sub(TSRMLS_D)
 		ZCG(counted) = 0;
         RETURN_IF_MLC_MODE();
 		DECREMENT(mem_usage);
-		ZCG(counted) = 0;
 	}
 #else
 	static const FLOCK_STRUCTURE(mem_usage_unlock, F_UNLCK, SEEK_SET, 1, 1);
@@ -1261,7 +1264,6 @@ static zend_persistent_script *cache_script_in_shared_memory(zend_persistent_scr
 	zend_shared_alloc_unlock(TSRMLS_C);
 
     COLLECT_TIMER(PERSIST);
-
 	*from_shared_memory = 1;
 	return new_persistent_script;
 }
@@ -1329,7 +1331,8 @@ static zend_persistent_script *compile_and_cache_file(zend_file_handle *file_han
 #if ZEND_EXTENSION_API_NO >= PHP_5_3_X_API_NO
 	zend_uint orig_compiler_options = 0;
 #endif
-   /* Try to open file */
+
+    /* Try to open file */
     if (file_handle->type == ZEND_HANDLE_FILENAME) {
         if (accelerator_orig_zend_stream_open_function(file_handle->filename, file_handle TSRMLS_CC) == SUCCESS) {
         	/* key may be changed by zend_stream_open_function() */
@@ -1587,6 +1590,7 @@ static zend_op_array *persistent_compile_file(zend_file_handle *file_handle, int
 
 			if (file_handle->opened_path &&
 			    (bucket = HASH_FIND_ENTRY(file_handle->opened_path, strlen(file_handle->opened_path) + 1)) != NULL) {
+
 				persistent_script = (zend_persistent_script *)bucket->data;
 				if (!ZCG(accel_directives).revalidate_path &&
 				    !persistent_script->corrupted) {
@@ -2181,9 +2185,7 @@ static void accel_activate(void)
 
 	ZCG(cwd) = NULL;
 
-    if (!zend_accel_open_file_cache(TSRMLS_C)){
-        ZSMMG(use_file_cache) = 0;
-    }
+    OPEN_FILE_CACHE(); 
 
 	SHM_PROTECT();
 }
@@ -2380,7 +2382,7 @@ static void accel_deactivate(void)
 	accel_unlock_all(TSRMLS_C);
 	ZCG(counted) = 0;
 
-    zend_accel_close_file_cache(TSRMLS_C);
+	CLOSE_FILE_CACHE();
 
 #if !ZEND_DEBUG
 	if (ZCG(accel_directives).fast_shutdown) {

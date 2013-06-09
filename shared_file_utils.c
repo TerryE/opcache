@@ -148,6 +148,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
     if (!ZFCSG(in_cachename)) {
         /* no cache file so fail through to default (no file cache) processing */
         zend_accel_error(ACCEL_LOG_INFO, "LOAD: no cache file specified");
+        ZSMMG(use_file_cache) = 0;
         return 0;
     }
 
@@ -179,6 +180,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
         ) {
     	zend_accel_error(ACCEL_LOG_WARNING, "Fingerprint mismatch on File cache", errmsg);
         ZFCSG(file_cache_dirty) = 1;
+        ZSMMG(use_file_cache) = 0;
         cleanup_cache_files();
         return 0;
     }
@@ -306,6 +308,7 @@ error:
     ZFCSG(file_cache_dirty) = 1;
     EFREE(cbuf);
     cleanup_cache_files();
+    ZSMMG(use_file_cache) = 0;
     COLLECT_TIMER(NDXLOAD);
     return 0;
 }
@@ -631,7 +634,7 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
     entry.record_offset            = ZFCSG(next_file_cache_offset);
 	entry.record.uncompressed_size = script->size;
     entry.record.script_offset     = (char *)script - module_addr;
-    entry.record.reloc_bvec_size   = zend_accel_script_prepare(script, &rbvec);
+    entry.record.reloc_bvec_size   = zend_accel_script_prepare(script, &rbvec TSRMLS_CC);
 
     CHECK((entry.record.compressed_size = cache_compress(module_addr, &zbuf, script->size)) > 0);
 
@@ -881,10 +884,11 @@ static FILE *open_temporary_file(char* prefix, char **name TSRMLS_DC)
 int cache_compress(const char* source, char** dest, int source_size)
 {ENTER(cache_compress)
     int dest_size;
-    int algo = ZCG(accel_directives).compression_algo;
+    int algo;
     TSRMLS_FETCH();
 
     SET_TIMER(DEFLATE);
+    algo = ZCG(accel_directives).compression_algo;
 
     if (algo == 1) { /* Standard zlib */
         zend_ulong dest_length = dest_size = compressBound(source_size);

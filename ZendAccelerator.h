@@ -27,7 +27,7 @@
 #endif
 
 #define ACCELERATOR_PRODUCT_NAME	"Zend OPcache"
-#define ACCELERATOR_VERSION "7.0.2-dev"
+#define ACCELERATOR_VERSION "7.0.3-dev"
 /* 2 - added Profiler support, on 20010712 */
 /* 3 - added support for Optimizer's encoded-only-files mode */
 /* 4 - works with the new Optimizer, that supports the file format with licenses */
@@ -173,7 +173,6 @@ typedef time_t accel_time_t;
 
 typedef enum _zend_accel_restart_reason {
 	ACCEL_RESTART_OOM,    /* restart because of out of memory */
-	ACCEL_RESTART_WASTED, /* restart because of wasted memory */
 	ACCEL_RESTART_HASH,   /* restart because of hash overflow */
 	ACCEL_RESTART_USER    /* restart sheduled by opcache_reset() */
 } zend_accel_restart_reason;
@@ -288,7 +287,6 @@ typedef struct _zend_accel_shared_globals {
 	unsigned long   misses;
 	unsigned long   blacklist_misses;
 	unsigned long   oom_restarts;     /* number of restarts because of out of memory */
-	unsigned long   wasted_restarts;  /* number of restarts because of wasted memory */
 	unsigned long   hash_restarts;    /* number of restarts because of hash overflow */
 	unsigned long   manual_restarts;  /* number of restarts sheduled by opcache_reset() */
 	zend_accel_hash hash;             /* hash table for cached scripts */

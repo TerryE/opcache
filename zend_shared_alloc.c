@@ -81,13 +81,13 @@ void zend_shared_alloc_create_lock(void)
 {ENTER(zend_shared_alloc_create_lock)
 	int val;
 
+#ifdef ZTS
+    zts_lock = tsrm_mutex_alloc();
+#endif
 #ifdef OPCACHE_ENABLE_FILE_CACHE
     if (strcmp(sapi_module.name, "cli") == 0 || strcmp(sapi_module.name, "cgi-fcgi") == 0) {
         return;
     }
-#endif
-#ifdef ZTS
-    zts_lock = tsrm_mutex_alloc();
 #endif
 
 	sprintf(lockfile_name, "%s/%sXXXXXX", TMP_DIR, SEM_FILENAME_PREFIX);
@@ -154,7 +154,7 @@ static int zend_shared_alloc_try(const zend_shared_memory_handler_entry *he, int
 	return ALLOC_FAILURE;
 }
 
-int zend_shared_alloc_startup(int requested_size)
+int zend_shared_alloc_startup(size_t requested_size)
 {ENTER(zend_shared_alloc_startup)
 	zend_shared_segment **tmp_shared_segments;
 	size_t shared_segments_array_size;
@@ -210,10 +210,6 @@ int zend_shared_alloc_startup(int requested_size)
         /* no fall through ! */
     }
 #endif
-    /* shared_free must be valid before we call zend_shared_alloc()
-	 * - make it temporarily point to a local variable
-	 */
-
 	if (ZCG(accel_directives).memory_model && ZCG(accel_directives).memory_model[0]) {
 		char *model = ZCG(accel_directives).memory_model;
 		/* "cgi" is really "shm"... */

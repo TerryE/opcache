@@ -355,9 +355,6 @@ static ZEND_MINIT_FUNCTION(zend_accelerator)
 {ENTER(MINIT-zend_accelerator)
 	(void)type; /* keep the compiler happy */
 
-	/* must be 0 before the ini entry OnUpdate function is called */
-	accel_blacklist.entries = NULL;
-
 	REGISTER_INI_ENTRIES();
 #if ZEND_EXTENSION_API_NO < PHP_5_3_X_API_NO
 	zend_set_user_opcode_handler(ZEND_DECLARE_INHERITED_CLASS_DELAYED, ZEND_DECLARE_INHERITED_CLASS_DELAYED_HANDLER);
@@ -432,8 +429,6 @@ void zend_accel_info(ZEND_MODULE_INFO_FUNC_ARGS)
 			php_info_print_table_row(2, "Max keys", buf);
 			snprintf(buf, sizeof(buf), "%ld", ZCSG(oom_restarts));
 			php_info_print_table_row(2, "OOM restarts", buf);
-			snprintf(buf, sizeof(buf), "%ld", ZCSG(wasted_restarts));
-			php_info_print_table_row(2, "Wasted memory restarts", buf);
 			snprintf(buf, sizeof(buf), "%ld", ZCSG(hash_restarts));
 			php_info_print_table_row(2, "Hash keys restarts", buf);
 			snprintf(buf, sizeof(buf), "%ld", ZCSG(manual_restarts));
@@ -521,18 +516,16 @@ static ZEND_FUNCTION(opcache_get_status)
 {
 	long reqs;
 	zval *memory_usage,*statistics,*scripts;
-    zend_bool fetch_scripts = 1;
+	zend_bool fetch_scripts = 1;
 
 	/* keep the compiler happy */
 	(void)ht; (void)return_value_ptr; (void)this_ptr; (void)return_value_used;
 
-#if ZEND_EXTENSION_API_NO >= PHP_5_3_X_API_NO
-	if (zend_parse_parameters_none() == FAILURE) {
-		RETURN_FALSE;
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|b", &fetch_scripts) == FAILURE) {
+		return;
 	}
-#endif
 	
-	if (!ZCG(enabled) || !accel_startup_ok || !ZCSG(accelerator_enabled)) {
+	if (!accel_startup_ok) {
 		RETURN_FALSE;
 	}
 
@@ -563,7 +556,6 @@ static ZEND_FUNCTION(opcache_get_status)
 	add_assoc_long(statistics, "start_time", ZCSG(start_time));
 	add_assoc_long(statistics, "last_restart_time", ZCSG(last_restart_time));
 	add_assoc_long(statistics, "oom_restarts", ZCSG(oom_restarts));
-	add_assoc_long(statistics, "wasted_restarts", ZCSG(wasted_restarts));
 	add_assoc_long(statistics, "hash_restarts", ZCSG(hash_restarts));
 	add_assoc_long(statistics, "manual_restarts", ZCSG(manual_restarts));
 	add_assoc_long(statistics, "misses", ZSMMG(memory_exhausted)?ZCSG(misses):ZCSG(misses)-ZCSG(blacklist_misses));
@@ -584,15 +576,15 @@ static ZEND_FUNCTION(opcache_get_status)
 
 static int add_blacklist_path(zend_blacklist_entry *p, zval *return_value TSRMLS_DC)
 {ENTER(add_blacklist_path)
- 	add_next_index_stringl(return_value, p->path, p->path_length, 1);
+	add_next_index_stringl(return_value, p->path, p->path_length, 1);
 	return 0;
 }
 
 /* {{{ proto array accelerator_get_configuration()
    Obtain configuration information */
 static ZEND_FUNCTION(opcache_get_configuration)
-{ENTER(/ZF-opcache_get_configuration)
- 	zval *directives,*version,*blacklist;
+{ENTER(ZF-opcache_get_configuration)
+	zval *directives,*version,*blacklist;
 
 	/* keep the compiler happy */
 	(void)ht; (void)return_value_ptr; (void)this_ptr; (void)return_value_used;

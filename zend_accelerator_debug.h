@@ -110,7 +110,7 @@ void zend_accel_error(int type, const char *format, ...);
     }
 # define REPORT_TIMERS() \
     if (accel_directives_debug_flags & ACCEL_DBG_TIMING) { \
-        accel_debug_report_timers(); \
+        accel_debug_report_timers(TSRMLS_C); \
     } 
 #else
 # define SET_TIMER(t)
@@ -122,7 +122,7 @@ void zend_accel_error(int type, const char *format, ...);
 
 void accel_debug_dump(zend_op_array *array);
 int accel_debug_enter(char *s);
-void accel_debug_collect_timer(int timer);
-void accel_debug_report_timers(void);
+void accel_debug_collect_timer(int timer TSRMLS_DC);
+void accel_debug_report_timers(TSRMLS_D);
 
 #endif /* _ZEND_ACCELERATOR_DEBUG_H */

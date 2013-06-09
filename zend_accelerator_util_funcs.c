@@ -559,14 +559,14 @@ static int zend_prepare_function_for_execution(zend_op_array *op_array)
 	/* protect reference count */
 	op_array->refcount = &zend_accel_refcount;
 	(*op_array->refcount) = ZEND_PROTECTED_REFCOUNT;
-
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
     /* In the case of traits, zend_clear_trait_method_name() efree's non-aliased function names
        so these need to be dupped to prevent efree cratering */
     if (op_array->scope && (op_array->scope->ce_flags & ZEND_ACC_TRAIT) == ZEND_ACC_TRAIT &&
 	    op_array->function_name && (op_array->fn_flags & ZEND_ACC_ALIAS) == 0) {
 		op_array->function_name = estrdup(op_array->function_name);
 	}
-
+#endif
 	/* copy statics */
 	if (shared_statics) {
 		ALLOC_HASHTABLE(op_array->static_variables);
