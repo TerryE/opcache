@@ -224,48 +224,32 @@ static void hash_prepare(HashTable *ht, zend_prepare_func_t prepare_element TSRM
     }
 }
 
-/* Note that the HT may be embeded statically in another structure so no pointer to it may exist. 
-   However, the arBuckets pointer will always be set on non-empty tables */ 
+/* To relocate the hastable, the relative form of the pListNext chain is converted to absolute 
+   pointer addresses and iterated over to generate the reverse pListlast chain and the pData -> 
+   pDataPtr links where needed.  The table is then rehashed to recover the pNext / pLast chains
+   and the arBuckets pointers */ 
 static void hash_relocate(HashTable *ht)
 {ENTER(zend_hash_relocate)
-	Bucket *p;
-	uint index;
-
     DEBUG2(RELR, "relocating HT %p (%u elements) ", ht, ht->nNumOfElements);
 
 	if (ht->nNumOfElements) {
+		Bucket *p, *pListLast = NULL;
         RELOCATE_PI(Bucket, ht->pListHead);
         p = ht->pListHead;
-	    while (1) {
-            index = p->h & ht->nTableMask;
-
-            /* Connect p to HT bucket dllist */
-	        p->pNext = ht->arBuckets[index];
-	        p->pLast = NULL;
-	        if (p->pNext) {
-		        p->pNext->pLast = p;
-	        }
-            ht->arBuckets[index] = p;
-
-            /* Connect p to global dllist */
-	        p->pListLast = ht->pListTail;
-	        ht->pListTail = p;
-	        if (p->pListLast != NULL) {
-		        p->pListLast->pListNext = p;
-	        }
-
-            if (p->pDataPtr) {
-                p->pData = &p->pDataPtr;
-            }
-
-            if (!p->pListNext) {
-                break;
-            }
-            RELOCATE_PI(void, p->pListNext);
-            p = p->pListNext;
-	    }
-
-        ht->pListTail = p;
+		while (1) {
+			if (p->pDataPtr) {
+			    p->pData = &p->pDataPtr;
+			}
+			p->pListLast = pListLast;
+			pListLast = p;
+			if (!p->pListNext) {
+				break;
+			}
+			RELOCATE_PI(Bucket, p->pListNext);
+			p = p->pListNext;						
+		}
+		ht->pListTail = p;
+		(void) zend_hash_rehash(ht);
         RELOCATE_PI_NZ(Bucket,ht->pInternalPointer);
     }
     if ((size_t)ht->pDestructor == (size_t) (-1)) {

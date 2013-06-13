@@ -316,10 +316,10 @@ error:
 void zend_accel_close_file_cache(TSRMLS_D)
 {ENTER(zend_accel_close_file_cache)
     struct stat sb = {0};
-    size_t bytes_copied = 0, bytes_copied2 = 0;
+    off_t bytes_copied = 0, bytes_copied2 = 0;
     int sb_rtn;
 
-    if (ZFCSG(file_cache_dirty) || !ZFCSG(tmp_fp)){
+    if (ZFCSG(file_cache_dirty) || !ZFCSG(tmp_fp) || ZFCSG(pid) != getpid()) {
         cleanup_cache_files();
         EFREE(ZFCSG(file_cached_scripts));
         return;
@@ -608,7 +608,12 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
         return;
     }
 
-    /* If the process has forked, turn off cache write in the child and treat the filecache as R/O */
+	/* Save the pid at first call to the save routine. If the process has forked since the first
+	   call, turn off cache write in the child and treat the filecache as R/O. Note that the modules
+	   unique to the child can still be cached because the first request will prime the cache for
+	   the parent scripts, and the parent won't do a save on the second request, so the child can.
+	   This works as long as only one process writes to the tmp file.  */
+
     if (ZFCSG(pid) == 0) {
         ZFCSG(pid) = getpid();
     } else if (ZFCSG(pid) != getpid()) {
@@ -624,7 +629,6 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
     if (ndx >= ZFCSG(file_cached_script_alloc)) {
         resize_file_cached_script_vec();
     }
-
 
     CHECK(ZFCSG(tmp_fp) || 
           (ZFCSG(tmp_fp) = open_temporary_file(TMP_FILE_PREFIX, &(ZFCSG(tmp_cachename)) TSRMLS_CC)));
@@ -642,6 +646,11 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
 
     CHECK(fwrite(zbuf, 1, entry.record.compressed_size, ZFCSG(tmp_fp))==entry.record.compressed_size);
     CHECK(fwrite(rbvec, 1,entry.record.reloc_bvec_size, ZFCSG(tmp_fp))==entry.record.reloc_bvec_size);
+
+	/* The tmp file must be flushed after the fwrite because if the PHP script forks between writes,
+       then the child will inherit the unflushed content and when it does the fclose this will be 
+       written out to the temp file and again by the parent!! */
+	(void) fflush(ZFCSG(tmp_fp));
 
     COLLECT_TIMER(CACHEWRITE);
 
