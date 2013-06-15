@@ -375,11 +375,11 @@ int main() {
 	zend_persist_prepare.c \
 	zend_shared_alloc.c \
 	zend_accelerator_util_funcs.c \
+    zend_accelerator_file_utils.c \
 	shared_alloc_shm.c \
 	shared_alloc_malloc.c \
 	shared_alloc_mmap.c \
 	shared_alloc_posix.c \
-    shared_file_utils.c \
 	Optimizer/zend_optimizer.c \
     lz4/lz4.c \
     lz4/lz4hc.c,

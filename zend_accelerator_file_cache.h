@@ -77,6 +77,22 @@ typedef struct _zend_accel_file_cache_globals {
     zend_bool                absolute_externals;
 } zend_accel_file_cache_globals;
 
+/**** Debug note on 64Bit builds bit 2 of the flag is set as a debugging aid */
+#if SIZEOF_SIZE_T == 8
+#  define ZEND_ACCEL_INTERN_FLAG   0x04   /* Pointer to address within the Interned string pool */
+#  define ZEND_ACCEL_HASH_FLAG     0x05   /* Pointer to HashTable (List Head) */
+#  define ZEND_ACCEL_INTERNAL_FLAG 0x06   /* Pointer to address within the module */
+#  define ZEND_ACCEL_HANDLER_FLAG  0x07   /* Pointer to opcode handler routine */
+#  define ZEND_ACCEL_FLAG_TEST     0x04
+#elif SIZEOF_SIZE_T == 4
+#  define ZEND_ACCEL_INTERN_FLAG   0x00   /* Pointer to address within the Interned string pool */
+#  define ZEND_ACCEL_HASH_FLAG     0x01   /* Pointer to HashTable (List Head) */
+#  define ZEND_ACCEL_INTERNAL_FLAG 0x02   /* Pointer to address within the module */
+#  define ZEND_ACCEL_HANDLER_FLAG  0x03   /* Pointer to opcode handler routine */
+#else
+#  error "Unknown size_t length.  Only 4 or 8 supported"
+#endif
+
 # define ZFCSG(element)  (accel_shared_globals->fcg.element)
 
 extern int       zend_accel_open_file_cache(TSRMLS_D);
@@ -84,6 +100,7 @@ extern void      zend_accel_close_file_cache(TSRMLS_D);
 extern void      zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC);
 extern void      zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *bucket TSRMLS_DC);
 extern void      zend_accel_file_cache_clear_file_cache(void);
+extern zend_uint zend_accel_prepare_memory(zend_uchar **rbvec TSRMLS_DC);
 extern zend_uint zend_accel_script_prepare(zend_persistent_script *script, zend_uchar **rbvec TSRMLS_DC);
 extern void      zend_accel_script_relocate(zend_file_cached_script *entry, char *memory_area, char *rbvec TSRMLS_DC);
 
