@@ -1028,14 +1028,3 @@ unsigned int zend_adler32(unsigned int checksum, signed char *buf, uint len)
 
 	return (s2 << 16) | s1;
 }
-#ifdef OPCACHE_ENABLE_FILE_CACHE
-dtor_func_t zend_accel_hash_dtors[]={
-    ZVAL_PTR_DTOR, ZEND_FUNCTION_DTOR, ZEND_CLASS_DTOR, 
-    (void (*)(void *)) 0x78a76f,    /************ BOTCH *********/
-    (void (*)(void *)) zend_accel_destroy_zend_function, 
-    (void (*)(void *)) zend_accel_destroy_zend_class,
-    (void (*)(void *)) zend_destroy_property_info, 
-    (void (*)(void *)) 0
-    };
-size_t zend_accel_hash_dtors_count = sizeof(zend_accel_hash_dtors)/sizeof(*zend_accel_hash_dtors);
-#endif

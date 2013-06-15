@@ -104,7 +104,10 @@
 /* Function call used as error hook for debugging */ 
 static void break_here(char **p){
     IF_DEBUG(ERROR_ON_BREAK_HERE) {
-        zend_accel_error(ACCEL_LOG_FATAL, "Invalid reference at %p", p);
+		if(!fork()) { 
+			abort(); /* Produce a crash dump for further analysis */
+		} 
+        zend_accel_error(ACCEL_LOG_ERROR, "invalid reference at %p", p);
     } else {
     	DEBUG2(RELR, "invalid reference at %p to %p ", p, *p);
     }
@@ -209,19 +212,9 @@ static void hash_prepare(HashTable *ht, zend_prepare_func_t prepare_element TSRM
            apart from do an internal relocation on the arBuckets pointer */
 		TAG(ht->arBuckets);
     }
-    if (ht->pDestructor>(dtor_func_t)zend_accel_hash_dtors_count) {
-        for (i=0;; i++) {
-            if (!zend_accel_hash_dtors[i]) {
-                BREAK_HERE(ht->pDestructor);
-                ht->pDestructor = (dtor_func_t)(size_t) (-1);
-                break;
-            }
-            if (ht->pDestructor == zend_accel_hash_dtors[i]) {
-                ht->pDestructor = (dtor_func_t)(size_t)i + 1;
-                break;
-            }
-        }
-    }
+/* prepared HT elements are never detroyed and the relevant "copy for execution" functions establish
+   the correct destructor in the hash table copy */
+	ht->pDestructor=NULL;
 }
 
 /* To relocate the hastable, the relative form of the pListNext chain is converted to absolute 
@@ -252,12 +245,8 @@ static void hash_relocate(HashTable *ht)
 		(void) zend_hash_rehash(ht);
         RELOCATE_PI_NZ(Bucket,ht->pInternalPointer);
     }
-    if ((size_t)ht->pDestructor == (size_t) (-1)) {
-        BREAK_HERE(ht->pDestructor);
-    } else if (ht->pDestructor) {
-        ht->pDestructor = zend_accel_hash_dtors[(size_t)ht->pDestructor - 1];
-    }
 }
+
 
 static inline void tag_zval_p(zval *z TSRMLS_DC)
 {ENTER(tag_zval_p)
