@@ -1,6 +1,6 @@
 == Health Warning ==
 
-This is a preliminary release that I not consider as even alpha code re core functionality though I
+This is a preliminary release that I consider as alpha code re core functionality though I
 have only really done main path coverage. I have released it at this stage primarily for feedback
 from the OPcache developers so that I can align what I am doing to their input before even
 suggesting progress towards a merge.  
@@ -9,60 +9,14 @@ I still have to implement / shake down the following, so still some way to go, b
 "there's no point in using a file cache because it makes no performance difference", this version
 does show by example that it does, and a material one.
 
-== Known bugs ==
 
+== TODOs ==
 
-=== Explicit relocation ptr tagging ===
+*   Bare vs. PHP or Zend wrapped I/O for the file cache
+*   Script invalidation and resource exhaustion paths
+*   Make tests/std-tests.sh configuration independant
+*   Rewrite tests/*.phpt scripts
 
-   This functionality now seems to be working reasonably rebustly. Need to add code to make F/C
-   fingerprint dependent on PHP version and toggle non default op handler check.
-
-   Drill down on Invalid reference failures: 
-        tests/classes:
-            bug30140.php
-            bug46246.php
-            dtor_scope.php
-            lsb_018.php
-
-=== Bare vs. PHP or Zend wrapped I/O for the file cache ===
-
-=== Script invalidation and resource exhaustion paths ===
-
-=== Make tests/std-tests.sh configuration independant ===
-
-=== Rewrite tests/*.phpt scripts === 
-
-== PHP 5.4 Tests ==
-
-PHP 5.4 build is now tested beyond 5.3. This is a non-ZTS build so is blind to some ZTS bugs. 
-However the full test suite gives the following results: 
-
-    Number of tests : 12147
-    Tests skipped   :  2709
-    Tests passed    :  9307
-    Expected fail   :    38
-    Tests failed    :    93
-      identically on both                           :  79  
-      ditto but with time / run dependent change    :   3     
-      reflection due to Opcache setting             :   8
-      hard errors which are all base OPcache bugs   :   3
-        tests/output/ob_017              Output diffs
-        tests/output/ob_start_basic_004  Output diffs
-        Zend/tests/ns_026                error drops function to lc: foo\foo\bar() vs Foo\Foo\Bar()
-
-== PHP 5.3 Tests ==
-
-    Will need to do regression to 5.3 at some point. This is a maintainer ZTS build.
-
-== Other code and test variants ==
-
-I am defering all work on the following until I get some working engagement / traction
-with the Zend team on MLC OPcache.
-*   32-bit build tests
-*   PHP 5.2 
-*   PHP 5.5
-*   Windows API builds
- 
 == Test Framework ==
 
 I can't use the standard test framework for OPcache as I need to test multiple test paths (e.g. 
@@ -74,7 +28,42 @@ validation.) So to filter out false fails I rerun these with standard Ubuntu PHP
 without the opcache extension loaded and discount those which fail identically on both or fail with
 a time / run dependent change that can be expected by examination of the test script.
 
+I've now extented the build process to build any combination of four build variants automatically
+*  a maintainer-ZTS PHP 5.3.17 debug-enabled build with a debug enabled MLC OPcache
+*  a non-ZTS PHP 5.4.9 debug-enabled build with a debug enabled MLC OPcache
+*  a "shrink-wrapped" PHP 5.4.9-4ubuntu2 production build using an -Ofast "production" MLC OPcache
+*  a "shrink-wrapped" PHP 5.4.9-4ubuntu2 production build using an -Ofast "production" OPcache
 
+and I have wrappers around the full PHP tests doing 4 complete runs for these variants:
+*  When the cache extension isn't loaded PHP uses its default mode of compile on load before execution.
+*  When the cache doesn't exist the compiler is invoked to compile the scripts and create the cache.
+*  When the cache does exist, the compile isn't invoked but the compiled scripts are loaded from the cache.
+*  In some cases conditional path result in additional scripts being compiled so a third test pass is needed.
+except in the last "shrink-wrapped" where only one run is needed.
+
+I then mine the test logs and build a summary spreadsheet of the fails (currently 117). Of these
+
+42   are artifacts of the cached compiled, e.g. a compiler warning is omitted because the compile is
+     cached.
+28   are because the PHAR extension doesn't play well with non-ZTS PHP 5.4.9 debug-enabled build
+5    are because of known optimization side-effects
+9    are some artifact of reflection documentation failures
+
+leaving ~30 that I have picked through and classified to see if they merit generating debug test
+cases to analyse. I haven't found one which appears to be a genuine OPcache bug rather than a test
+artefact,  so MLC OPcache now has a clean bill of health as far as the standard tests go.
+
+Now need to consider some specific OPcache path related tests.
+
+== Other code and test variants ==
+
+I am defering all work on the following until I get some working engagement / traction
+with the Zend team on MLC OPcache.
+*   32-bit build tests
+*   PHP 5.2 
+*   PHP 5.5
+*   Windows API builds
+ 
 == Known issue on PHP variant ==
 
 There are also some subtle differences between PHP 5.4.9-4ubuntu2 and my dev PHP 5.4.9 compile, 
@@ -103,7 +92,6 @@ and on mine dev build generates (even with opcache disabled):
 
 Note the dropping of the space between the index and the =>, and the failure to escape \r\n.
 
-
 == Response to resource exhaustion and invalidated cache ==
 
 Opcache optionally does timestamp checks on files and can then set persistent_script->corrupted = 1
@@ -126,10 +114,6 @@ zend_persist.c:133 replaces ht->arBuckets = NULL by ht->arBuckets = (Bucket**)&u
 
 Need to explore further  (not yet implemented) !!!
 
-== SMA size is now a size_t ==
- zend_shared_alloc_startup(size_t requested_size)
-
-
 == Simple Benchmark ==
 
 Prime VFAT cache, 100 reps uncached; prime file and VFAT cache, 100 reps cached.  Build with debug
@@ -144,4 +128,5 @@ echo >> /tmp/xx.lst
 (for ((i=0;i<100;i=i+1)); do rm -f runJobs.cache; $PHP runJobs.php; done ) |& grep -i timing >> /tmp/xx.lst
 echo >> /tmp/xx.lst
 (for ((i=0;i<100;i=i+1)); do $PHP runJobs.php; done ) |& grep -i timing >> /tmp/xx.lst
+
 

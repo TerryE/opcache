@@ -54,6 +54,7 @@
 #include "zend_alloc.h"
 #include "zend_hash.h"
 #include "zend_variables.h"
+#include "zend_vm.h"
 
 #include "ext/standard/info.h"
 #include "ext/standard/file.h"
@@ -97,6 +98,31 @@
 #else
 # define ADDR_HI_SET ((size_t) 0x80000000)
 #endif
+#define FLAG_MASK       (SIZEOF_SIZE_T-1)
+#ifdef ACCEL_DEBUG
+#  define BREAK_HERE(p) break_here((char **)p);
+#else
+#  define BREAK_HERE(p) zend_accel_error(ACCEL_LOG_ERROR, "invalid reference at %p", p);
+#endif
+
+#define ALIGNED_PTR_MASK ~(size_t)(SIZEOF_SIZE_T-1)
+#define RELOCATE_PI(type,p) p = (type *) (((size_t)(p) + (size_t)(&p)) & ALIGNED_PTR_MASK); \
+   DEBUG3(RELR, "Making (" #type "*) %p position absolute %p at line %u", &p, p, __LINE__)
+#define RELOCATE_PI_NZ(type,p) if (p) {RELOCATE_PI(type,p);}
+#define IS_INTERNAL(s) (((s) >= ZFCSG(module_base)) && ((s) < ZFCSG(module_end)))
+  
+/* Function call used as error hook for debugging */ 
+static void break_here(char **p){
+    IF_DEBUG(ERROR_ON_BREAK_HERE) {
+		if(!fork()) { 
+			abort(); /* Produce a crash dump for further analysis */
+		} 
+        zend_accel_error(ACCEL_LOG_ERROR, "invalid reference at %p", p);
+    } else {
+    	DEBUG2(RELR, "invalid reference at %p to %p ", p, *p);
+    }
+}
+
 
 typedef struct _fc_index_header {
     char        fingerprint[FINGERPRINT_SIZE];
@@ -951,6 +977,211 @@ int cache_decompress(const char* source, char* dest, int source_size, int dest_s
     }
 
     return 0;
+}
+
+/* Each byte of reloc_bitflag has 1 bit per pointer in the module (as all pointers are aligned),
+   so each byte maps onto 8*SIZEOF_SIZE_T bytes of the module, with the ls pointer mapping onto
+   the lsb of the byte.  first_bit is just a quick way of finding the first set bit low-to-high */  
+static const zend_uchar first_bit[] = {
+    8,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+    5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+    6,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+    5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+    7,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+    5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+    6,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+    5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0};
+zend_uint zend_accel_prepare_memory(zend_uchar **rbvec TSRMLS_DC)
+{ENTER(prepare_memory)
+    /* reloc_bitflag is scanned twice: the first time to compute the size of the relocation vector;
+       the second to generate the relocation vector and convert the tagged pointers to relocatable
+       offset form. */
+    zend_uint   n     = ZFCSG(reloc_bitflag_size) * 8;
+    zend_uchar *p     = ZFCSG(reloc_bitflag);
+    char      **q     = (char **)ZFCSG(module_base); /* treat the module as an array of (char *)s */
+    char       *t;
+    zend_uchar *reloc_bvec, *r;
+    zend_uint  i, delta, last, cnt;
+
+    /* 1st pass over the bit vector to compute size of the corresponding relocation vector */
+    for (i = 0, last = 0, cnt = 0; i<n; i+=8) {
+        zend_uchar b = *p++;
+        while (b) {
+            zend_uchar j = first_bit[b];          
+            b ^= 1<<j;
+            cnt++;
+            /* add extra bytes when multi-byte sequences are used */
+            for (delta = (i + j) - last; delta>0x7f; delta >>= 7, cnt++) { }
+            last = i + j;
+        }
+    }
+    cnt++;
+    reloc_bvec = (zend_uchar *) emalloc(cnt);
+
+    /* 2nd pass creates the relocation vector and relocates the pointers to relative format */
+    for (i = 0, last = 0, p = ZFCSG(reloc_bitflag), r = reloc_bvec; i<n; i+=8) {
+        zend_uchar b = *p++;
+        while (b) {
+            zend_uchar j = first_bit[b];          
+            char     **s = q + (i + j), *sval;
+            b ^= 1<<j;
+
+            /* generate byte vector */
+            delta = (i + j) - last;
+            last  = i + j;
+            if (delta <= 0x7f) { /* the typical case */
+                *r++ = (zend_uchar) delta;
+            } else {             /* handle the multi-byte cases */
+               /* Emit multi-bytes lsb first with 7 bits sig; high-bit set to indicate follow-on. */
+                while (delta > 0x7f) {
+                    *r++ = (zend_uchar) (delta & 0x7f) | 0x80;
+                    delta >>= 7;
+                }
+                *r++ = (zend_uchar) delta;
+            }
+            /* Now relocate the pointer itself, all tagged pointers should be internal to the 
+               module, an interned string or an (already converted) handler */
+            sval = *s;
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
+            if IS_INTERNED(sval) {
+                *s -= (size_t)CG(interned_strings_start) - ZEND_ACCEL_INTERN_FLAG;
+                DEBUG3(RELR, "relocating %p interned string %p -> %p", s, sval, *s);
+            } else 
+#endif
+            if (((size_t) sval & FLAG_MASK) == 0 && IS_INTERNAL(sval)) {
+                *s -= (size_t)ZFCSG(module_base) - ZEND_ACCEL_INTERNAL_FLAG;
+                DEBUG3(RELR, "relocating %p internal %p -> %p", s, sval, *s);
+
+            } else if (((size_t) *s & FLAG_MASK) == ZEND_ACCEL_HASH_FLAG) {
+                *s -= (size_t)ZFCSG(module_base);
+                DEBUG3(RELR, "relocating %p HashTable->arBuckets %p -> %p", s, sval, *s);
+
+            } else if (((size_t) *s & FLAG_MASK) == ZEND_ACCEL_HANDLER_FLAG) {
+                *s -= (size_t)ZFCSG(module_base);
+                DEBUG3(RELR, "relocating %p  op_array->opcodes %p -> %p", s, sval, *s);
+
+            } else {
+                BREAK_HERE(s);   /* Oops -- something has gone wrong */
+            }            
+        }
+    }
+    *r++ = 0;
+    assert (r == reloc_bvec + cnt);
+
+#ifdef ACCEL_DEBUG
+    for (t = ZFCSG(module_base); t < ZFCSG(module_end); t += sizeof(char **)) {
+        if (IS_INTERNAL(*(char **)t)) {
+            BREAK_HERE(t);
+        }
+    }
+#endif  
+    *rbvec = reloc_bvec;
+    return cnt;
+}        
+/* To relocate the hastable, the relative form of the pListNext chain is converted to absolute 
+   pointer addresses and iterated over to generate the reverse pListlast chain and the pData -> 
+   pDataPtr links where needed.  The table is then rehashed to recover the pNext / pLast chains
+   and the arBuckets pointers */ 
+static void hash_relocate_for_execution(HashTable *ht)
+{ENTER(hash_relocate_for_execution)
+    DEBUG2(RELR, "relocating HT %p (%u elements) ", ht, ht->nNumOfElements);
+
+	if (ht->nNumOfElements) {
+		Bucket *p, *pListLast = NULL;
+        RELOCATE_PI(Bucket, ht->pListHead);
+        p = ht->pListHead;
+		while (1) {
+			if (p->pDataPtr) {
+			    p->pData = &p->pDataPtr;
+			}
+			p->pListLast = pListLast;
+			pListLast = p;
+			if (!p->pListNext) {
+				break;
+			}
+			RELOCATE_PI(Bucket, p->pListNext);
+			p = p->pListNext;						
+		}
+		ht->pListTail = p;
+		(void) zend_hash_rehash(ht);
+        RELOCATE_PI_NZ(Bucket,ht->pInternalPointer);
+    }
+}
+
+static void set_op_array_handlers_for_execution(zend_op_array *op_array)
+{ENTER(set_op_array_handlers_for_execution)
+    uint i;
+    for (i = 0; i<op_array->last; i++) {
+        if (!op_array->opcodes[i].handler) {
+            ZEND_VM_SET_OPCODE_HANDLER(op_array->opcodes + i);
+        }
+    }
+}  
+
+/* The relocation byte vector (rbvec) contains the byte offset (in size_t units) of each * pointer
+   in the SMA to be relocated. As these pointers are a lot denser than every * 127 longs (1016
+   bytes), the encoding uses a simple high-bit multi-byte escape to * encode exceptions. Also note
+   that 0 is used as a terminator excepting that the first * entry can validly be '0'. */
+void zend_accel_script_relocate(zend_file_cached_script *entry, char *memory_area, char *rbvec TSRMLS_DC)
+{ENTER(zend_accel_script_relocate)
+    zend_persistent_script *script = (zend_persistent_script *) entry->incache_script_bucket->data;
+    size_t        *q               = (size_t *) memory_area;
+    unsigned char *p               = (unsigned char *) rbvec;
+
+    ZFCSG(module_base) = memory_area;
+   /* Use a do {} while loop because the first byte offset can by zero; any other is a terminator */
+    do {
+        char *old_qv, *linked_rec;
+        if (p[0]<128) {         /* offset <1K the typical case */
+            q += *p++;
+        } else if (p[1]<128) {  /* offset <128Kb */
+            q += (zend_uint)(p[0] & 0x7f) + (((zend_uint)p[1])<<7);
+            p += 2;
+        } else if (p[2]<128) {  /* offset <16Mb */
+            q += (zend_uint)(p[0] & 0x7f) + ((zend_uint)(p[1] & 0x7f)<<7) + (((zend_uint)p[2])<<14);
+            p += 3;
+        } else if (p[3]<128) {  /* offset <2Gb Ho-ho */
+            q += (zend_uint)(p[0] & 0x7f)      + ((zend_uint)(p[1] & 0x7f)<<7) + 
+                ((zend_uint)(p[2] & 0x7f)<<14) + (((zend_uint)p[3])<<21);
+            p += 4;
+        }
+
+        old_qv = *(char **)q;
+        switch (*q & FLAG_MASK) {
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
+            case ZEND_ACCEL_INTERN_FLAG:
+                *q += (size_t)(ZCSG(interned_strings_start) - ZEND_ACCEL_INTERN_FLAG);
+                DEBUG3(RELR, "relocating %p interned string %p -> %p", q, old_qv, *(char **)q);
+                break;
+#endif
+            case ZEND_ACCEL_INTERNAL_FLAG:
+                *q += (size_t)(memory_area - ZEND_ACCEL_INTERNAL_FLAG);
+                DEBUG3(RELR, "relocating %p internal %p -> %p", q, old_qv, *(char **)q);
+                break;
+
+            case ZEND_ACCEL_HASH_FLAG:
+                /* The HT->arBuckets field is tagged */
+                *q += (size_t)memory_area - ZEND_ACCEL_HASH_FLAG;
+                linked_rec = (char *)q - (size_t)&(((HashTable *) 0)->arBuckets);
+                DEBUG4(RELR, "relocating %p internal %p -> %p. Now relocating HT at %p", q, old_qv, *(char **)q, linked_rec);
+                hash_relocate_for_execution((HashTable *)linked_rec);
+                break;
+
+            case ZEND_ACCEL_HANDLER_FLAG:
+                /* The op_array->opcodes field is tagged */
+                *q += (size_t)memory_area - ZEND_ACCEL_HANDLER_FLAG;
+                linked_rec = (char *)q - (size_t)&(((zend_op_array *) 0)->opcodes);
+                DEBUG4(RELR, "relocating %p internal %p -> %p. Now relocating handlers for op_array at %p", q, old_qv, *(char **)q, linked_rec);
+                set_op_array_handlers_for_execution((zend_op_array *)linked_rec);
+                break;
+
+            default:
+                BREAK_HERE(q);
+        }
+
+    } while (*p != '\0');
+   
+    assert((char *)q < memory_area + script->size);
 }
 
 #endif /* OPCACHE_ENABLE_FILE_CACHE */
