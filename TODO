@@ -9,6 +9,13 @@ I still have to implement / shake down the following, so still some way to go, b
 "there's no point in using a file cache because it makes no performance difference", this version
 does show by example that it does, and a material one.
 
+* can't use zend_resolve_path() in generate_cache_name() as this only processes existing files and 
+  return NULL if the file doesn't exist.  Need a realpath equiv .
+
+* need a different guard on use of lock file.  if use_file_cache gets disabled during run, we default
+  back to normal opcache mode which uses the lockfile, but this hasn't been enabled.  should just not
+  use lockfile for all cli and cgi modes.
+
 
 == TODOs ==
 

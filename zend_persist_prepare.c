@@ -55,7 +55,6 @@
 #  error "Unknown size_t length.  Only 4 or 8 supported"
 #endif
 
-
 #define FLAG_MASK       (SIZEOF_SIZE_T-1)
 #define RBF_MASK        0x07
 #define BYTES_PER_RELOC_MASK_BYTE (SIZEOF_SIZE_T * 8)

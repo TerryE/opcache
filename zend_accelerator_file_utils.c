@@ -21,6 +21,9 @@
 #include "zend_extensions.h"
 #include "zend_compile.h"
 #include "ZendAccelerator.h"
+#include "tsrm_virtual_cwd.h"
+#include "ext/standard/php_string.h"
+
 #ifdef OPCACHE_ENABLE_FILE_CACHE
 
 #include "zend_shared_alloc.h"
@@ -189,7 +192,6 @@ int zend_accel_open_file_cache(TSRMLS_D)
         (fp = fopen(ZFCSG(in_cachename), "rb")) == NULL) {
         /* cache isn't a valid file or we can't open it so again fail through */ 
         zend_accel_error(ACCEL_LOG_INFO, "LOAD: cache file %s does not exist. Creating new file.", ZFCSG(in_cachename));
-        DEBUG1(LOAD,"cache file %s does not exist", ZFCSG(in_cachename));
         return 1;
     }
 
@@ -279,7 +281,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
         zend_uint p_length = strlen(p);
         bucket = zend_accel_hash_update(&ZCSG(hash), p, p_length + 1, 0, ZFCSG(file_cached_scripts)+i);
         ZFCSG(file_cached_scripts)[i].incache_script_bucket = bucket;
-        DEBUG1(INDEX, "script path:%s", p);
+        DEBUG2(INDEX, "script path(%u):%s", i, p);
         p += p_length + 1;
     }
 
@@ -353,8 +355,13 @@ void zend_accel_close_file_cache(TSRMLS_D)
 
     SET_TIMER(CACHEWRITE);
 
-    CHECK(ZFCSG(new_fp) = open_temporary_file(TMP_FILE_PREFIX, &ZFCSG(new_cachename) TSRMLS_CC));
-    
+	ZFCSG(new_fp) = open_temporary_file(TMP_FILE_PREFIX, &ZFCSG(new_cachename) TSRMLS_CC);
+	if (!ZFCSG(new_fp)) {
+        cleanup_cache_files();
+        EFREE(ZFCSG(file_cached_scripts));
+        return; /* no need to log error; open_temporary_file() has already done this */
+    }
+
     CHECK(write_index_to_file(ZFCSG(new_fp)));
 
     if(ZFCSG(in_fp)) {
@@ -389,6 +396,7 @@ void zend_accel_close_file_cache(TSRMLS_D)
 /// TODO: This can fail due to a share violation on Win32
 		(void) rename(ZFCSG(new_cachename), ZFCSG(in_cachename));
 	} else {
+		zend_accel_error(ACCEL_LOG_WARNING, "unable to create cache file %s", ZFCSG(in_cachename));
 		ZFCSG(file_cache_dirty) = 1;
 	}
     cleanup_cache_files();
@@ -595,29 +603,27 @@ error:
 static void resize_file_cached_script_vec(void)
 {ENTER(resize_file_cached_script_vec)
     /* handle growth of the FC script vector */
-    zend_file_cached_script *old_vec = ZFCSG(file_cached_scripts);
-    zend_file_cached_script *old_vec_max = old_vec + ZFCSG(file_cached_script_count);
-    zend_uint i;
 
-    if (ZFCSG(file_cached_scripts)) {
+    if (!ZFCSG(file_cached_scripts)) {
+        ZFCSG(file_cached_script_alloc) = SCRIPT_VEC_HEADROOM;
+        ZFCSG(file_cached_scripts) = emalloc(SCRIPT_VEC_HEADROOM*sizeof(zend_file_cached_script));
+    } else {
+		zend_file_cached_script *old_vec = ZFCSG(file_cached_scripts);
+		zend_uint i;
+
         ZFCSG(file_cached_script_alloc) += SCRIPT_VEC_HEADROOM;
         ZFCSG(file_cached_scripts) = erealloc(ZFCSG(file_cached_scripts), 
                                               ZFCSG(file_cached_script_alloc)*sizeof(zend_file_cached_script));
-        if (ZFCSG(file_cached_scripts) != old_vec) {
-           /* The ZCSG(hash) entries can point to vec entries, and if so each entry needs to be 
-              relocated to corresponding entry in the newly allocated vector */
-            for (i = 0; i<ZCSG(hash).num_entries; i++) {
-                char *ptr = (char *) &(ZCSG(hash).hash_entries[i].data);
-                if (!ZCSG(hash).hash_entries[i].indirect &&
-                    ptr >= (char *) old_vec && ptr < (char *)old_vec_max) {
-                    zend_uint j = (zend_file_cached_script *)ptr - old_vec;
-                    ZCSG(hash).hash_entries[i].data = ZFCSG(file_cached_scripts)+j;
-                }
-            }
-        }
-    } else {
-        ZFCSG(file_cached_script_alloc) = SCRIPT_VEC_HEADROOM;
-        ZFCSG(file_cached_scripts) = emalloc(SCRIPT_VEC_HEADROOM*sizeof(zend_file_cached_script));
+		/* The cached script record points to the corresponding ZCSG(hash) bucket. If the modules is
+		   still to be loaded from the file cache, the bucket data points back to the cached script
+		   record, and this pointer need to be updated to point to the new vector location. */
+		for (i = 0; i <  ZFCSG(file_cached_script_count) - 1; i++) {
+		    zend_accel_hash_entry *bucket = ZFCSG(file_cached_scripts)[i].incache_script_bucket;
+	        zend_uint ndx = (zend_file_cached_script *)(bucket->data) - old_vec;
+	        if (ndx < ZFCSG(file_cached_script_count)) {
+				bucket->data = ZFCSG(file_cached_scripts) + ndx;
+			}
+		}
     }
 }
 
@@ -803,115 +809,123 @@ static char *generate_cache_name(TSRMLS_D)
     char *filt       = ZCG(accel_directives).cache_pattern;
     char *repl       = ZCG(accel_directives).cache_file;
     char *filename   = SG(request_info).path_translated;
-    char *cache_path = NULL;
+    char *cache_path = NULL, *cache_dir, *base_name, *resolved_path, resolved_dir[MAXPATHLEN];
     pcre *re         = NULL;
     pcre_extra *rex  = NULL;
     const char *error;
-    int error_offset, n_pats; 
+    int error_offset, n_pats, path_len, dir_len;
+	zend_ulong base_name_len;
+    char  tmp_path[MAXPATHLEN];
 
     /* Only do replacement processing if the cache parameters are set. */ 
     if (!filename || !repl || repl[0] =='\0') { 
         return NULL;
     } 
-    if (!filt || filt[0] =='\0') { 
-        int l=strlen(repl);
-        cache_path = emalloc(l + 1);
-        strcpy(cache_path, repl);
-        return cache_path;
-    } 
 
-    if ((re = pcre_compile(filt, PCRE_UTF8, &error, &error_offset, NULL)) == NULL || 
-        (rex = pcre_study(re, 0, &error)) == NULL ||
-        pcre_fullinfo(re, rex, PCRE_INFO_CAPTURECOUNT, &n_pats) < 0 ||
-        n_pats > 10)  {
+    if (!filt || filt[0] =='\0') {
+		cache_path = repl;
+		path_len   = strlen(repl);
+	} else {
+		if ((re = pcre_compile(filt, PCRE_UTF8, &error, &error_offset, NULL)) == NULL || 
+		    (rex = pcre_study(re, 0, &error)) == NULL ||
+		    pcre_fullinfo(re, rex, PCRE_INFO_CAPTURECOUNT, &n_pats) < 0 ||
+		    n_pats > 10)  {
 
-        zend_accel_error(ACCEL_LOG_WARNING, "Invalid cache pattern; Caching is suppressed.");
+		    zend_accel_error(ACCEL_LOG_WARNING, "Invalid cache pattern; Caching is suppressed.");
 
-    } else { /* pattern compiled so we're good to go */
-        int ovector[30];
-        if ((n_pats = pcre_exec(re, rex, filename, strlen(filename),
-                                0, 0, ovector, 30)) <= 0) {
-            zend_accel_error(ACCEL_LOG_WARNING, 
-                         "Cache pattern failed to match %s; Caching is suppressed.", filename);
-       } else { /* pattern executed against filename so map $0..$9 to str + sub1 .. sub9 */
-            char  tmp_path[MAXPATHLEN+1];
-            char *p = repl; 
-            char *q = tmp_path, *qend = tmp_path + MAXPATHLEN;
-            int   i;
-            int   n = strlen(p); 
-            int   mode = 0;    /* 1 = last was \ escape; 2 last was $; 0 otherwise */
-            /* construct replacement filename */
-            for (i = 0; i<n && q < qend; i++, p++) {
-                if (*p == '\\') {
-                    if (mode==0) {
-                        mode = 1;
-                    } else {
-                        *q++ = '\\';
-                        mode = 0;
-                    }
-                } else if (*p == '$' && mode != 1 && p[1]>='0' && p[1]<= '9' ) {
-                    mode = 2;
-                } else if (mode == 2) {
-                    int pat_no = (*p - '0');
-                    if (pat_no < n_pats) {
-                        int rc = pcre_copy_substring(filename, ovector, n_pats, pat_no, 
-                                                     q, qend-q);
-                        if (rc < 0) {
-                            q = qend+1;
-                            break;
-                        } else {
-                            q += rc;
-                        }
-                    }
-                    mode = 0;
-                } else {
-                    if((*q++ = *p) == 0) {
-                        break;
-                    }
-                    mode = 0;
-                }
-            }
-            if (q > qend) {
-                zend_accel_error(ACCEL_LOG_WARNING, 
-                             "Cache filename too long; Caching is suppressed.");
-            } else {
-                i = q - tmp_path;
-                cache_path = emalloc(i + 1);
-                strncpy(cache_path, tmp_path, i);
-            }
-        }
-    }
-    if (re) {
-        pcre_free(re);
-    }
-    if (rex) {
-        pcre_free(rex);
-    }
-        
-    return cache_path;
+		} else { /* pattern compiled so we're good to go */
+		    int ovector[30];
+		    if ((n_pats = pcre_exec(re, rex, filename, strlen(filename),
+		                            0, 0, ovector, 30)) <= 0) {
+		        zend_accel_error(ACCEL_LOG_WARNING, 
+		                     "Cache pattern failed to match %s; Caching is suppressed.", filename);
+		   } else { /* pattern executed against filename so map $0..$9 to str + sub1 .. sub9 */
+		        char *p = repl; 
+		        char *q = tmp_path, *qend = tmp_path + MAXPATHLEN;
+		        int   i;
+		        int   n = strlen(p); 
+		        int   mode = 0;    /* 1 = last was \ escape; 2 last was $; 0 otherwise */
+		        /* construct replacement filename */
+		        for (i = 0; i<n && q < qend; i++, p++) {
+		            if (*p == '\\') {
+		                if (mode==0) {
+		                    mode = 1;
+		                } else {
+		                    *q++ = '\\';
+		                    mode = 0;
+		                }
+		            } else if (*p == '$' && mode != 1 && p[1]>='0' && p[1]<= '9' ) {
+		                mode = 2;
+		            } else if (mode == 2) {
+		                int pat_no = (*p - '0');
+		                if (pat_no < n_pats) {
+		                    int rc = pcre_copy_substring(filename, ovector, n_pats, pat_no, 
+		                                                 q, qend-q);
+		                    if (rc < 0) {
+		                        q = qend+1;
+		                        break;
+		                    } else {
+		                        q += rc;
+		                    }
+		                }
+		                mode = 0;
+		            } else {
+		                if((*q++ = *p) == 0) {
+		                    break;
+		                }
+		                mode = 0;
+		            }
+		        }
+		        if (q > qend) {
+		            zend_accel_error(ACCEL_LOG_WARNING, 
+		                         "Cache filename too long; Caching is suppressed.");
+					return NULL;
+		        }
+ 				path_len = q - tmp_path;
+				tmp_path[path_len] = 0;
+				cache_path = tmp_path;
+		    }
+		}
+		if (re) {
+		    pcre_free(re);
+		}
+		if (rex) {
+		    pcre_free(rex);
+		}
+	}       
+	cache_dir = estrdup(cache_path);
+	dir_len   = php_dirname(cache_dir, strlen(cache_dir));
+	if (!VCWD_REALPATH(cache_dir, resolved_dir)) {
+		efree(cache_dir);
+		return NULL;
+	}
+	efree(cache_dir);
+    php_basename(cache_path, path_len, NULL, 0, &base_name, &base_name_len TSRMLS_CC);
+	resolved_path = emalloc(strlen(resolved_dir) + 1 + base_name_len + 1);
+	sprintf(resolved_path, "%s/%s", resolved_dir, base_name);
+	efree(base_name);
+	return resolved_path;
 }
+
 static FILE *open_temporary_file(char* prefix, char **name TSRMLS_DC)
 {ENTER(open_temporary_file)
-    char *tmp_name = emalloc(strlen(ZFCSG(in_cachename)) + strlen(prefix) + 4 + 8 + 6);
+    char *tmp_dir, *tmp_name;
     FILE *tmp_fd;
-    char *t;
-	int tmp_file;
+	int dir_len, tmp_file; 
 
-    strcpy(tmp_name, ZFCSG(in_cachename));
-    t = dirname(tmp_name);
-    if (tmp_name != t) {
-        strcpy(tmp_name, t);
-    }
+	tmp_dir = estrdup(ZFCSG(in_cachename));
+    dir_len = php_dirname(tmp_dir, strlen(tmp_dir));
+	tmp_name = emalloc(dir_len + strlen(prefix) + sizeof("/XXXXXX."));
+	sprintf(tmp_name, "%s/%sXXXXXX", tmp_dir, prefix);
+	efree(tmp_dir);
 
-	sprintf(tmp_name+strlen(tmp_name), "/%sXXXXXX", prefix);
 	tmp_file = mkstemp(tmp_name);
-
 	if (tmp_file >0 && (tmp_fd = fdopen(tmp_file, "wbx")) != NULL) {
         *name = tmp_name;
         return tmp_fd;
     }         
 
- 	zend_accel_error(ACCEL_LOG_ERROR, "Unable to create temp file: %s", tmp_name);
+ 	zend_accel_error(ACCEL_LOG_ERROR, "Unable to create temporary file: %s", tmp_name);
     efree(tmp_name);
 	return NULL;
 }

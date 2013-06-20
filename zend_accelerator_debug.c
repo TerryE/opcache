@@ -86,9 +86,15 @@ void zend_accel_error(int type, const char *format, ...)
 	fprintf(fLog, "\n");
 	switch (type) {
 		case ACCEL_LOG_ERROR:
+			if(!fork()) { 
+				abort(); /* Produce a crash dump for further analysis */
+			} 
 			zend_bailout();
 			break;
 		case ACCEL_LOG_FATAL:
+			if(!fork()) { 
+				abort(); /* Produce a crash dump for further analysis */
+			} 
 			exit(-2);
 			break;
 	}

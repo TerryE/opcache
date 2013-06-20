@@ -2383,15 +2383,14 @@ static void accel_deactivate(void)
 	ZCG(counted) = 0;
 
 	CLOSE_FILE_CACHE();
+    COLLECT_TIMER(REQUEST);
+    REPORT_TIMERS();
 
 #if !ZEND_DEBUG
 	if (ZCG(accel_directives).fast_shutdown) {
 		zend_accel_fast_shutdown(TSRMLS_C);
 	}
 #endif
-
-        COLLECT_TIMER(REQUEST);
-        REPORT_TIMERS();
 
 	if (ZCG(cwd)) {
 		efree(ZCG(cwd));
@@ -2656,21 +2655,20 @@ static int accel_startup(zend_extension *extension)
 		ZCG(include_path_key) = NULL;
 		if (ZCG(include_path) && *ZCG(include_path)) {
 			ZCG(include_path_len) = strlen(ZCG(include_path));
-			if (!zend_accel_hash_is_full(&ZCSG(include_paths))) {
+			ZCG(include_path_key) = zend_accel_hash_find(&ZCSG(include_paths), ZCG(include_path), ZCG(include_path_len) + 1);
+			if (!ZCG(include_path_key) &&
+				!zend_accel_hash_is_full(&ZCSG(include_paths))) {
 				char *key;
-
 				zend_shared_alloc_lock(TSRMLS_C);
-    		    if (!zend_accel_hash_find(&ZCSG(include_paths), ZCG(include_path), ZCG(include_path_len) + 1)) {
-				    key = zend_shared_alloc(ZCG(include_path_len) + 2);
-				    if (key) {
-					    memcpy(key, ZCG(include_path), ZCG(include_path_len) + 1);
-					    key[ZCG(include_path_len) + 1] = 'A' + ZCSG(include_paths).num_entries;
-					    ZCG(include_path_key) = key + ZCG(include_path_len) + 1;
-					    zend_accel_hash_update(&ZCSG(include_paths), key, ZCG(include_path_len) + 1, 0, ZCG(include_path_key));
-					} else {
-						zend_accel_schedule_restart_if_necessary(ACCEL_RESTART_OOM TSRMLS_CC);
-					}
-                }
+				key = zend_shared_alloc(ZCG(include_path_len) + 2);
+				if (key) {
+					memcpy(key, ZCG(include_path), ZCG(include_path_len) + 1);
+					key[ZCG(include_path_len) + 1] = 'A' + ZCSG(include_paths).num_entries;
+					ZCG(include_path_key) = key + ZCG(include_path_len) + 1;
+					zend_accel_hash_update(&ZCSG(include_paths), key, ZCG(include_path_len) + 1, 0, ZCG(include_path_key));
+				} else {
+					zend_accel_schedule_restart_if_necessary(ACCEL_RESTART_OOM TSRMLS_CC);
+				}
 				zend_shared_alloc_unlock(TSRMLS_C);
 			}
 		} else {
