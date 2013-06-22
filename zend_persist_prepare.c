@@ -177,7 +177,13 @@ static void hash_prepare(HashTable *ht, zend_prepare_func_t prepare_element TSRM
         memset( ht->arBuckets, 0, ht->nTableSize * sizeof (Bucket *));
 		TAG_TYPE(HASH, ht->arBuckets);
 
-    } else if (ht->arBuckets) {
+    }  
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
+	else if (ht->nTableMask==0) {
+		ht->arBuckets = NULL;  /* override ptr to uninitialized_bucket (PHP >= 5.4) */
+	} 
+#endif
+	else if (ht->arBuckets) {
         /* Empty table with preallocated arBuckets vector (e.g. PHP < 5.4).  Nothing to do 
            apart from do an internal relocation on the arBuckets pointer */
 		TAG(ht->arBuckets);

@@ -9,19 +9,19 @@ I still have to implement / shake down the following, so still some way to go, b
 "there's no point in using a file cache because it makes no performance difference", this version
 does show by example that it does, and a material one.
 
-* can't use zend_resolve_path() in generate_cache_name() as this only processes existing files and 
-  return NULL if the file doesn't exist.  Need a realpath equiv .
-
-* need a different guard on use of lock file.  if use_file_cache gets disabled during run, we default
-  back to normal opcache mode which uses the lockfile, but this hasn't been enabled.  should just not
-  use lockfile for all cli and cgi modes.
-
-
 == TODOs ==
 
-*   Bare vs. PHP or Zend wrapped I/O for the file cache
+*   Need a different guard on use of lock file. if use_file_cache gets disabled during run, we
+    default back to normal opcache mode which uses the lockfile, but this hasn't been enabled.
+    Should just not use lockfile for all cli and cgi modes.
+
+*   Bare vs. PHP or Zend wrapped I/O for the file cache.  At the moment I use bare (that is Clib)
+    I/O.  PHP dev team might wish me to change this.
+
 *   Script invalidation and resource exhaustion paths
+
 *   Make tests/std-tests.sh configuration independant
+
 *   Rewrite tests/*.phpt scripts
 
 == Test Framework ==
@@ -60,7 +60,7 @@ leaving ~30 that I have picked through and classified to see if they merit gener
 cases to analyse. I haven't found one which appears to be a genuine OPcache bug rather than a test
 artefact,  so MLC OPcache now has a clean bill of health as far as the standard tests go.
 
-Now need to consider some specific OPcache path related tests.
+I now need to consider some specific OPcache path related tests.
 
 == Other code and test variants ==
 
@@ -114,12 +114,6 @@ it has none in the per-process / request mode of MLC-OPcache.  TBD -- backing th
 == Update Cache Fingerprint Logic ==
 
 This is currently behind the description in https://github.com/TerryE/opcache/wiki/MLC-OPcache-details
-
-== Use of uninitialized_bucket ==
-
-zend_persist.c:133 replaces ht->arBuckets = NULL by ht->arBuckets = (Bucket**)&uninitialized_bucket
-
-Need to explore further  (not yet implemented) !!!
 
 == Simple Benchmark ==
 

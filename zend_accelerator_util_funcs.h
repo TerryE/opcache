@@ -28,6 +28,7 @@
 void zend_accel_copy_internal_functions(TSRMLS_D);
 
 zend_persistent_script* create_persistent_script(void);
+int compact_persistent_script(zend_persistent_script *script);
 void free_persistent_script(zend_persistent_script *persistent_script, int destroy_elements);
 
 void zend_accel_free_user_functions(HashTable *ht TSRMLS_DC);
@@ -38,6 +39,7 @@ zend_op_array* zend_accel_load_script(zend_persistent_script *persistent_script,
 #define ADLER32_INIT 1     /* initial Adler-32 value */
 
 unsigned int zend_adler32(unsigned int checksum, signed char *buf, uint len);
+
 #endif /* ZEND_ACCELERATOR_UTIL_FUNCS_H */
 
 /*

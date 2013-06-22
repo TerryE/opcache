@@ -1092,6 +1092,10 @@ zend_uint zend_accel_prepare_memory(zend_uchar **rbvec TSRMLS_DC)
     *rbvec = reloc_bvec;
     return cnt;
 }        
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
+static const Bucket *uninitialized_bucket = NULL;
+#endif
+
 /* To relocate the hastable, the relative form of the pListNext chain is converted to absolute 
    pointer addresses and iterated over to generate the reverse pListlast chain and the pData -> 
    pDataPtr links where needed.  The table is then rehashed to recover the pNext / pLast chains
@@ -1119,7 +1123,12 @@ static void hash_relocate_for_execution(HashTable *ht)
 		ht->pListTail = p;
 		(void) zend_hash_rehash(ht);
         RELOCATE_PI_NZ(Bucket,ht->pInternalPointer);
-    }
+    } 
+#if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
+	else if (ht->nTableMask==0) {
+		ht->arBuckets = (Bucket **) &uninitialized_bucket;  /* override ptr to  (PHP >= 5.4) */
+	} 
+#endif
 }
 
 static void set_op_array_handlers_for_execution(zend_op_array *op_array)
