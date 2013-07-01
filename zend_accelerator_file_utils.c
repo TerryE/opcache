@@ -830,7 +830,6 @@ static char *generate_cache_name(TSRMLS_D)
 		    (rex = pcre_study(re, 0, &error)) == NULL ||
 		    pcre_fullinfo(re, rex, PCRE_INFO_CAPTURECOUNT, &n_pats) < 0 ||
 		    n_pats > 10)  {
-
 		    zend_accel_error(ACCEL_LOG_WARNING, "Invalid cache pattern; Caching is suppressed.");
 
 		} else { /* pattern compiled so we're good to go */
@@ -892,7 +891,12 @@ static char *generate_cache_name(TSRMLS_D)
 		if (rex) {
 		    pcre_free(rex);
 		}
-	}       
+	}
+
+	if (!cache_path) {
+		return NULL;
+	}
+
 	cache_dir = estrdup(cache_path);
 	dir_len   = php_dirname(cache_dir, strlen(cache_dir));
 	if (!VCWD_REALPATH(cache_dir, resolved_dir)) {

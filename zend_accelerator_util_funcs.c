@@ -24,6 +24,7 @@
 #include "zend_accelerator_util_funcs.h"
 #include "zend_persist.h"
 #include "zend_shared_alloc.h"
+#include "php_version.h"
 
 #define ZEND_PROTECTED_REFCOUNT	(1<<30)
 
@@ -602,11 +603,10 @@ static void zend_hash_clone_prop_info(HashTable *ht, HashTable *source, zend_cla
 static int zend_prepare_function_for_execution(zend_op_array *op_array)
 {ENTER(zend_prepare_function_for_execution)
 	HashTable *shared_statics = op_array->static_variables;
-
 	/* protect reference count */
 	op_array->refcount = &zend_accel_refcount;
 	(*op_array->refcount) = ZEND_PROTECTED_REFCOUNT;
-#if ZEND_EXTENSION_API_NO == PHP_5_4_X_API_NO
+#if ZEND_EXTENSION_API_NO == PHP_5_4_X_API_NO && PHP_RELEASE_VERSION < 11
     /* In the case of traits, zend_clear_trait_method_name() efree's non-aliased function names
        so these need to be dupped to prevent efree cratering */
     if (op_array->scope && (op_array->scope->ce_flags & ZEND_ACC_TRAIT) == ZEND_ACC_TRAIT &&
