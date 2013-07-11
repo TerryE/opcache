@@ -11,14 +11,21 @@ does show by example that it does, and a material one.
 
 == TODOs ==
 
+*   If the script doesn't have write access to the cache directory then the open_temporary_file()
+    for any new opcache fails, generating an error "Unable to create temporary file: XXX".  This 
+    probably shouldn't be error here.  The correct action is to generate a warning and revert back 
+    to no cached execution.  
+
 *   Need a different guard on use of lock file. if use_file_cache gets disabled during run, we
     default back to normal opcache mode which uses the lockfile, but this hasn't been enabled.
     Should just not use lockfile for all cli and cgi modes.
 
+*   Script invalidation and resource exhaustion paths -- at the moment a recompile of the php
+    build can invalid the cache due to the ophandler fingerprint mismatch.  Logic needs tidying 
+    here.  This is linked to the above.
+
 *   Bare vs. PHP or Zend wrapped I/O for the file cache.  At the moment I use bare (that is Clib)
     I/O.  PHP dev team might wish me to change this.
-
-*   Script invalidation and resource exhaustion paths
 
 *   Make tests/std-tests.sh configuration independant
 
