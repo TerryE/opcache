@@ -65,7 +65,7 @@ void zend_accel_hash_init(zend_accel_hash *accel_hash, zend_uint hash_size)
 		return;
 	}
 	memset(accel_hash->hash_table, 0, sizeof(zend_accel_hash_entry *)*accel_hash->max_num_entries);
-    DEBUG2(HASH,"initialising %p with %u elements", accel_hash, hash_size);
+    DEBUG(HASH,"initialising %p with %u elements", accel_hash, hash_size);
 }
 
 /* Returns NULL if hash is full
@@ -111,7 +111,7 @@ zend_accel_hash_entry* zend_accel_hash_update(zend_accel_hash *accel_hash, char 
 					entry->data = data;
 				}
 			}
-            DEBUG3(HASH, "key %*s update at %p", key_length, key, entry);
+            DEBUG(HASH, "key %*s update at %p", key_length, key, entry);
 			return entry;
 		}
 		entry = entry->next;
@@ -136,7 +136,7 @@ zend_accel_hash_entry* zend_accel_hash_update(zend_accel_hash *accel_hash, char 
 	entry->key_length = key_length;
 	entry->next = accel_hash->hash_table[index];
 	accel_hash->hash_table[index] = entry;
-    DEBUG4(HASH, "key %*s %s insert at %p", key_length, key, indirect ? "indirect":"direct", entry);
+    DEBUG(HASH, "key %*s %s insert at %p", key_length, key, indirect ? "indirect":"direct", entry);
 	return entry;
 }
 
@@ -158,16 +158,16 @@ void* zend_accel_hash_find(zend_accel_hash *accel_hash, char *key, zend_uint key
 			&& entry->key_length == key_length
 			&& !memcmp(entry->key, key, key_length)) {
 			if (entry->indirect) {
-                DEBUG3(HASH, "key %*s found, data at %p", key_length, key, ((zend_accel_hash_entry *)entry->data)->data);
+                DEBUG(HASH, "key %*s found, data at %p", key_length, key, ((zend_accel_hash_entry *)entry->data)->data);
 				return ((zend_accel_hash_entry *) entry->data)->data;
 			} else {
-                DEBUG3(HASH, "key %*s found, data at %p", key_length, key, entry->data);
+                DEBUG(HASH, "key %*s found, data at %p", key_length, key, entry->data);
 				return entry->data;
 			}
 		}
 		entry = entry->next;
 	}
-    DEBUG2(HASH, "key %*s not found", key_length, key);
+    DEBUG(HASH, "key %*s not found", key_length, key);
 	return NULL;
 }
 
@@ -189,16 +189,16 @@ zend_accel_hash_entry* zend_accel_hash_find_entry(zend_accel_hash *accel_hash, c
 			&& entry->key_length == key_length
 			&& !memcmp(entry->key, key, key_length)) {
 			if (entry->indirect) {
-                DEBUG3(HASH, "key %*s found, data at %p", key_length, key, entry->data);
+                DEBUG(HASH, "key %*s found, data at %p", key_length, key, entry->data);
 				return (zend_accel_hash_entry *) entry->data;
 			} else {
-                DEBUG3(HASH, "key %*s found, data at %p", key_length, key, entry);
+                DEBUG(HASH, "key %*s found, data at %p", key_length, key, entry);
 				return entry;
 			}
 		}
 		entry = entry->next;
 	}
-    DEBUG2(HASH, "key %*s not found", key_length, key);
+    DEBUG(HASH, "key %*s not found", key_length, key);
 	return NULL;
 }
 

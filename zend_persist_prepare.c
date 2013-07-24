@@ -91,7 +91,7 @@ static void set_tag(char **p LINEDC)
     uint       mask_offset = byte_offset>>RBF_SHIFT;
     zend_uchar bitmask     = 1 << ((byte_offset/sizeof(char **)) & RBF_MASK);
 
-    DEBUG3(RELR, "tagging %p -> %p at line %u", p, *p, line);
+    DEBUG(RELR, "tagging %p -> %p at line %u", p, *p, line);
     ZFCSG(reloc_bitflag)[mask_offset] |= bitmask;
 }
 
@@ -102,7 +102,7 @@ static int is_tag(char **p LINEDC)
     zend_uchar bitmask     = 1 << ((byte_offset/sizeof(char **)) & RBF_MASK);
     int        result      = (ZFCSG(reloc_bitflag)[mask_offset] & bitmask) != 0;
 
-    DEBUG3(RELR, "is_tag %p:%s at line %u ", p, result ? "set" : "clear", line);
+    DEBUG(RELR, "is_tag %p:%s at line %u ", p, result ? "set" : "clear", line);
     return result;
 }
 
@@ -113,7 +113,7 @@ static void set_tagged_type(uint tag_type, char **p)
 static void make_pi(char **p LINEDC)
 {ENTER(make_pi)
     *p -= (size_t)(p);
-    DEBUG2(RELR, "Making %p position indep at line %u", p, line);
+    DEBUG(RELR, "Making %p position indep at line %u", p, line);
 }
 
 typedef void (*zend_prepare_func_t)(void * TSRMLS_DC);
@@ -137,7 +137,7 @@ static void hash_prepare(HashTable *ht, zend_prepare_func_t prepare_element TSRM
 	Bucket *p = ht->pListHead, *p_next;
 	uint i;
 
-    DEBUG4(RELR, "preparing HT %p (%u elements), %u buckets ptr %p ", ht, ht->nNumOfElements, ht->nTableSize, &ht->arBuckets);
+    DEBUG(RELR, "preparing HT %p (%u elements), %u buckets ptr %p ", ht, ht->nNumOfElements, ht->nTableSize, &ht->arBuckets);
 
     if (IS_TAGGED(ht->arBuckets)) {
         return;
@@ -227,7 +227,7 @@ static void prepare_op_array(zend_op_array *op_array TSRMLS_DC)
 		return;
 	}
 
-    DEBUG3(RELR, "preparing op_array %p (%u oplines ptr %p) ", op_array, op_array->last, &op_array->opcodes);
+    DEBUG(RELR, "preparing op_array %p (%u oplines ptr %p) ", op_array, op_array->last, &op_array->opcodes);
 
 	TAG_NZ(op_array->filename);
 

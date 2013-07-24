@@ -110,7 +110,7 @@
 
 #define ALIGNED_PTR_MASK ~(size_t)(SIZEOF_SIZE_T-1)
 #define RELOCATE_PI(type,p) p = (type *) (((size_t)(p) + (size_t)(&p)) & ALIGNED_PTR_MASK); \
-   DEBUG3(RELR, "Making (" #type "*) %p position absolute %p at line %u", &p, p, __LINE__)
+   DEBUG(RELR, "Making (" #type "*) %p position absolute %p at line %u", &p, p, __LINE__)
 #define RELOCATE_PI_NZ(type,p) if (p) {RELOCATE_PI(type,p);}
 #define IS_INTERNAL(s) (((s) >= ZFCSG(module_base)) && ((s) < ZFCSG(module_end)))
   
@@ -122,7 +122,7 @@ static void break_here(char **p){
 		} 
         zend_accel_error(ACCEL_LOG_ERROR, "invalid reference at %p", p);
     } else {
-    	DEBUG2(RELR, "invalid reference at %p to %p ", p, *p);
+    	DEBUG(RELR, "invalid reference at %p to %p ", p, *p);
     }
 }
 
@@ -213,11 +213,11 @@ int zend_accel_open_file_cache(TSRMLS_D)
         return 0;
     }
 
-    DEBUG5(INDEX, "cache file header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size, 
+    DEBUG(INDEX, "cache file header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size, 
                   header.uncompressed_size, header.script_count, 
                   header.max_include_paths_entry, header.max_hash_entry);
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-    DEBUG3(INDEX,"cache file header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
+    DEBUG(INDEX,"cache file header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
                  header.interned_strings_count, header.interned_base_tail);
 #endif    
 
@@ -270,7 +270,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
 	    if (!zend_accel_hash_find(&ZCSG(include_paths), p, include_path_len + 1)) {
     		zend_accel_hash_update(&ZCSG(include_paths), p, include_path_len + 1, 0, p + include_path_len + 1);
         }
-        DEBUG1(INDEX, "include path:%s", p);
+        DEBUG(INDEX, "include path:%s", p);
         p += include_path_len + 3;
     }
 
@@ -281,7 +281,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
         zend_uint p_length = strlen(p);
         bucket = zend_accel_hash_update(&ZCSG(hash), p, p_length + 1, 0, ZFCSG(file_cached_scripts)+i);
         ZFCSG(file_cached_scripts)[i].incache_script_bucket = bucket;
-        DEBUG2(INDEX, "script path(%u):%s", i, p);
+        DEBUG(INDEX, "script path(%u):%s", i, p);
         p += p_length + 1;
     }
 
@@ -294,7 +294,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
         p += strlen(p) + 1;
         p_length = strlen(p) + 1;
         (void) zend_accel_hash_update(&ZCSG(hash), p, p_length, 1, ZFCSG(file_cached_scripts)[j].incache_script_bucket);
-        DEBUG2(INDEX, "indirect path:%s refers to:%s", p, ZFCSG(file_cached_scripts)[j].incache_script_bucket->key);
+        DEBUG(INDEX, "indirect path:%s refers to:%s", p, ZFCSG(file_cached_scripts)[j].incache_script_bucket->key);
         p += p_length;
     }
 
@@ -316,7 +316,7 @@ int zend_accel_open_file_cache(TSRMLS_D)
             } while ((signed) *p++ < 0 );
         }
         (void) accel_new_interned_string(p, key_length, 0 TSRMLS_CC);
-        DEBUG3(INTERN, "new[%u] (%u):%s", i, key_length, p);
+        DEBUG(INTERN, "new[%u] (%u):%s", i, key_length, p);
         p += key_length;
     }
 
@@ -367,12 +367,12 @@ void zend_accel_close_file_cache(TSRMLS_D)
     if(ZFCSG(in_fp)) {
         CHECK(fseek(ZFCSG(in_fp),ZFCSG(file_cached_scripts)[0].record_offset, SEEK_SET)==0);
         bytes_copied = copy_file(ZFCSG(in_fp), ZFCSG(new_fp));
-        DEBUG1(LOAD, "%u bytes copied from old cache to new", (int) bytes_copied);
+        DEBUG(LOAD, "%u bytes copied from old cache to new", (int) bytes_copied);
     }
 
     CHECK(fseek(ZFCSG(tmp_fp),0, SEEK_SET)==0);
     bytes_copied2 = copy_file(ZFCSG(tmp_fp), ZFCSG(new_fp));
-    DEBUG1(LOAD, "%u bytes copied from tmp cache to new", (int) bytes_copied2);
+    DEBUG(LOAD, "%u bytes copied from tmp cache to new", (int) bytes_copied2);
     bytes_copied += bytes_copied2;
 
     CHECK(bytes_copied == ZFCSG(next_file_cache_offset) - ZFCSG(file_cached_scripts)[0].record_offset);
@@ -517,7 +517,7 @@ static int write_index_to_file(FILE *fd)
 
     for (i = 0;  i < ZCSG(include_paths).num_entries; i++) {
         memcpy(p, ZCSG(include_paths).hash_entries[i].key, ZCSG(include_paths).hash_entries[i].key_length);
-        DEBUG1(INDEX, "include path:%s", p);
+        DEBUG(INDEX, "include path:%s", p);
         p += ZCSG(include_paths).hash_entries[i].key_length;
         *p++ = 0;
         *p++ = 0;
@@ -528,7 +528,7 @@ static int write_index_to_file(FILE *fd)
     for (i = 0; i < ZFCSG(file_cached_script_count); i++) {
         zend_accel_hash_entry *bucket = ZFCSG(file_cached_scripts)[i].incache_script_bucket;
         memcpy(p, bucket->key, bucket->key_length);
-        DEBUG1(INDEX, "script path:%s", p);
+        DEBUG(INDEX, "script path:%s", p);
         p += bucket->key_length;
     }
 
@@ -546,7 +546,7 @@ static int write_index_to_file(FILE *fd)
             sprintf(p,"%u",ndx);
             p += strlen(p)+1;
             memcpy(p, bucket->key, bucket->key_length);
-            DEBUG1(INDEX, "indirect path:%s", p);
+            DEBUG(INDEX, "indirect path:%s", p);
             p += bucket->key_length;         
         }
     }
@@ -563,7 +563,7 @@ static int write_index_to_file(FILE *fd)
             l >>= 7;
         }
         *p++ = l;
-        DEBUG3(INTERN, "copy[%u] (%u):%*2$s", i, interned_bucket->nKeyLength, interned_bucket->arKey);
+        DEBUG(INTERN, "copy[%u] (%u):%*2$s", i, interned_bucket->nKeyLength, interned_bucket->arKey);
         memcpy(p, interned_bucket->arKey, interned_bucket->nKeyLength);
         p += interned_bucket->nKeyLength;
         interned_bucket = interned_bucket->pListNext;
@@ -577,11 +577,11 @@ static int write_index_to_file(FILE *fd)
 
     CHECK((header.compressed_size = cache_compress(obuf, &zbuf, header.uncompressed_size)) > 0);
 
-    DEBUG5(INDEX, "cache file header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size,
+    DEBUG(INDEX, "cache file header - CS:%u US:%u SC:%u #I:%u #H:%u",  (int) sizeof(header) + header.compressed_size,
                   header.uncompressed_size, header.script_count, 
                   header.max_include_paths_entry, header.max_hash_entry);
 # if (ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO) && !defined(ZTS)
-    DEBUG3(INDEX, "cache file header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
+    DEBUG(INDEX, "cache file header - #IBC:%u #IC:%u ICO:%u",  header.interned_base_count,
                   header.interned_strings_count, header.interned_base_tail);
 #endif    
 
@@ -686,7 +686,7 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
 
     COLLECT_TIMER(CACHEWRITE);
 
-    DEBUG6(LOAD, "written %*s at %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
+    DEBUG(LOAD, "written %*s at %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
                  ZFCSG(next_file_cache_offset), script->size,
                  entry.record.compressed_size, entry.record.reloc_bvec_size);
     ZFCSG(next_file_cache_offset) += entry.record.compressed_size + entry.record.reloc_bvec_size;  
@@ -710,7 +710,7 @@ void zend_accel_save_module_to_file(zend_accel_hash_entry *bucket TSRMLS_DC)
         IF_DEBUG(RELR) {
             for (i = 0; i < entry.record.uncompressed_size; i += sizeof(char**)) {
                 if (*(char**)(module_addr + i) != (*(char**)(ZFCSG(reloc_script_image) + i))) {
-                    DEBUG4(RELR,"Reference mismatch at %p (+%08x) to %p vs %p", module_addr + i, i,
+                    DEBUG(RELR,"Reference mismatch at %p (+%08x) to %p vs %p", module_addr + i, i,
                                 *(char**)(module_addr + i),*(char**)ZFCSG(reloc_script_image));
                 }
             }
@@ -778,7 +778,7 @@ void zend_accel_load_module_from_file(zend_uint ndx, zend_accel_hash_entry *buck
     zend_accel_script_relocate(script, obuf, reloc_bvec TSRMLS_CC);
     efree(buf);
 	zend_shared_alloc_unlock(TSRMLS_C);
-    DEBUG6(LOAD, "read %*s from %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
+    DEBUG(LOAD, "read %*s from %u Size:%u CS:%u RBVS:%u", bucket->key_length, bucket->key, 
                  offset, script->record.uncompressed_size,
                  script->record.compressed_size, script->record.reloc_bvec_size);
 	return;
@@ -1063,20 +1063,20 @@ zend_uint zend_accel_prepare_memory(zend_uchar **rbvec TSRMLS_DC)
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
             if IS_INTERNED(sval) {
                 *s -= (size_t)CG(interned_strings_start) - ZEND_ACCEL_INTERN_FLAG;
-                DEBUG3(RELR, "relocating %p interned string %p -> %p", s, sval, *s);
+                DEBUG(RELR, "relocating %p interned string %p -> %p", s, sval, *s);
             } else 
 #endif
             if (((size_t) sval & FLAG_MASK) == 0 && IS_INTERNAL(sval)) {
                 *s -= (size_t)ZFCSG(module_base) - ZEND_ACCEL_INTERNAL_FLAG;
-                DEBUG3(RELR, "relocating %p internal %p -> %p", s, sval, *s);
+                DEBUG(RELR, "relocating %p internal %p -> %p", s, sval, *s);
 
             } else if (((size_t) *s & FLAG_MASK) == ZEND_ACCEL_HASH_FLAG) {
                 *s -= (size_t)ZFCSG(module_base);
-                DEBUG3(RELR, "relocating %p HashTable->arBuckets %p -> %p", s, sval, *s);
+                DEBUG(RELR, "relocating %p HashTable->arBuckets %p -> %p", s, sval, *s);
 
             } else if (((size_t) *s & FLAG_MASK) == ZEND_ACCEL_HANDLER_FLAG) {
                 *s -= (size_t)ZFCSG(module_base);
-                DEBUG3(RELR, "relocating %p  op_array->opcodes %p -> %p", s, sval, *s);
+                DEBUG(RELR, "relocating %p  op_array->opcodes %p -> %p", s, sval, *s);
 
             } else {
                 BREAK_HERE(s);   /* Oops -- something has gone wrong */
@@ -1106,7 +1106,7 @@ static const Bucket *uninitialized_bucket = NULL;
    and the arBuckets pointers */ 
 static void hash_relocate_for_execution(HashTable *ht)
 {ENTER(hash_relocate_for_execution)
-    DEBUG2(RELR, "relocating HT %p (%u elements) ", ht, ht->nNumOfElements);
+    DEBUG(RELR, "relocating HT %p (%u elements) ", ht, ht->nNumOfElements);
 
 	if (ht->nNumOfElements) {
 		Bucket *p, *pListLast = NULL;
@@ -1178,19 +1178,19 @@ void zend_accel_script_relocate(zend_file_cached_script *entry, char *memory_are
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
             case ZEND_ACCEL_INTERN_FLAG:
                 *q += (size_t)(ZCSG(interned_strings_start) - ZEND_ACCEL_INTERN_FLAG);
-                DEBUG3(RELR, "relocating %p interned string %p -> %p", q, old_qv, *(char **)q);
+                DEBUG(RELR, "relocating %p interned string %p -> %p", q, old_qv, *(char **)q);
                 break;
 #endif
             case ZEND_ACCEL_INTERNAL_FLAG:
                 *q += (size_t)(memory_area - ZEND_ACCEL_INTERNAL_FLAG);
-                DEBUG3(RELR, "relocating %p internal %p -> %p", q, old_qv, *(char **)q);
+                DEBUG(RELR, "relocating %p internal %p -> %p", q, old_qv, *(char **)q);
                 break;
 
             case ZEND_ACCEL_HASH_FLAG:
                 /* The HT->arBuckets field is tagged */
                 *q += (size_t)memory_area - ZEND_ACCEL_HASH_FLAG;
                 linked_rec = (char *)q - (size_t)&(((HashTable *) 0)->arBuckets);
-                DEBUG4(RELR, "relocating %p internal %p -> %p. Now relocating HT at %p", q, old_qv, *(char **)q, linked_rec);
+                DEBUG(RELR, "relocating %p internal %p -> %p. Now relocating HT at %p", q, old_qv, *(char **)q, linked_rec);
                 hash_relocate_for_execution((HashTable *)linked_rec);
                 break;
 
@@ -1198,7 +1198,7 @@ void zend_accel_script_relocate(zend_file_cached_script *entry, char *memory_are
                 /* The op_array->opcodes field is tagged */
                 *q += (size_t)memory_area - ZEND_ACCEL_HANDLER_FLAG;
                 linked_rec = (char *)q - (size_t)&(((zend_op_array *) 0)->opcodes);
-                DEBUG4(RELR, "relocating %p internal %p -> %p. Now relocating handlers for op_array at %p", q, old_qv, *(char **)q, linked_rec);
+                DEBUG(RELR, "relocating %p internal %p -> %p. Now relocating handlers for op_array at %p", q, old_qv, *(char **)q, linked_rec);
                 set_op_array_handlers_for_execution((zend_op_array *)linked_rec);
                 break;
 

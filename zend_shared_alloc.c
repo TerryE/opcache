@@ -366,7 +366,7 @@ void *zend_shared_alloc(size_t size)
 			ZSMMG(shared_segments)[i]->pos += block_size;
 			ZSMMG(shared_free) -= block_size;
 			memset(retval, 0, block_size);
-            DEBUG3(ALLOC, "%u bytes allocated at %p(%08lx)", (uint) size, retval,
+            DEBUG(ALLOC, "%u bytes allocated at %p(%08lx)", (uint) size, retval,
                           ZSMMG(shared_segments)[i]->pos - block_size);
 			return retval;
 		}

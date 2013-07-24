@@ -131,7 +131,7 @@ static void zend_hash_persist(HashTable *ht, void (*pPersistElement)(void *pElem
 			}
 		}
 		zend_accel_store(ht->arBuckets, sizeof(Bucket*) * ht->nTableSize);
-        DEBUG3(MEMUSE, "HashTable %p, Buckets %u Allocated %u Used", ht, ht->nTableSize, ht->nNumOfElements);
+        DEBUG(MEMUSE, "HashTable %p, Buckets %u Allocated %u Used", ht, ht->nTableSize, ht->nNumOfElements);
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
 	} else {
 		ht->arBuckets = (Bucket**)&uninitialized_bucket;
@@ -246,7 +246,7 @@ static void zend_persist_op_array_ex(zend_op_array *op_array, zend_persistent_sc
 		op_array->opcodes = persist_ptr;
 	} else {
 		zend_op *new_opcodes = zend_accel_memdup(op_array->opcodes, sizeof(zend_op) * op_array->last);
-        DEBUG1(MEMUSE, "Opcodes alloc:%u", sizeof(zend_op) * op_array->last);
+        DEBUG(MEMUSE, "Opcodes alloc:%u", sizeof(zend_op) * op_array->last);
 		zend_op *opline = new_opcodes;
 		zend_op *end = new_opcodes + op_array->last;
 		int offset = 0;

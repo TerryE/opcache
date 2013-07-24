@@ -146,7 +146,7 @@ static inline void* zend_accel_file_cache_hash_find(char *k, zend_uint kl TSRMLS
 #  define OPEN_FILE_CACHE() zend_accel_open_file_cache(TSRMLS_C)
 #  define CLOSE_FILE_CACHE() zend_accel_close_file_cache(TSRMLS_C)
 #else
-#  define FILE_CACHE_WRITE(bucket,script)
+#  define FILE_CACHE_WRITE(bucket)
 #  define HASH_FIND(k, kl) zend_accel_hash_find(&ZCSG(hash), k, kl);
 #  define HASH_FIND_ENTRY(k, kl) zend_accel_hash_find_entry(&ZCSG(hash), k, kl)
 #  define OPEN_FILE_CACHE()
@@ -1094,7 +1094,7 @@ char *accel_make_persistent_key_ex(zend_file_handle *file_handle, int path_lengt
     }
 
 	*key_len = ZCG(key_len) = key_length;
-    DEBUG3(KEY, "generated persistant key %*.*s",key_length,key_length,ZCG(key));
+    DEBUG(KEY, "generated persistant key %*.*s",key_length,key_length,ZCG(key));
 	return ZCG(key);
 }
 
@@ -1245,7 +1245,7 @@ static zend_persistent_script *cache_script_in_shared_memory(zend_persistent_scr
 			(char *)new_persistent_script->mem + new_persistent_script->size,
 			ZCG(mem));
 	}
-    DEBUG2(MEMUSE, "Script Alloc:%u %s", memory_used, new_persistent_script->full_path);
+    DEBUG(MEMUSE, "Script Alloc:%u %s", memory_used, new_persistent_script->full_path);
 
 	new_persistent_script->dynamic_members.checksum = zend_accel_script_checksum(new_persistent_script);
 

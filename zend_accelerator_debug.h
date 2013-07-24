@@ -75,22 +75,12 @@ void zend_accel_error(int type, const char *format, ...);
   extern int ACCEL_debug_enter(char *s); 
 # define IF_DEBUG(flg) if (accel_directives_debug_flags & ACCEL_DBG_ ## flg)
 # define DEBUG0(flg,fmt) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt)
-# define DEBUG1(flg,fmt,a1) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt, a1)
-# define DEBUG2(flg,fmt,a1,a2) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2)
-# define DEBUG3(flg,fmt,a1,a2,a3) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3)
-# define DEBUG4(flg,fmt,a1,a2,a3,a4) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3,a4)
-# define DEBUG5(flg,fmt,a1,a2,a3,a4,a5) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3,a4,a5)
-# define DEBUG6(flg,fmt,a1,a2,a3,a4,a5,a6) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt,a1,a2,a3,a4,a5,a6)
+# define DEBUG(flg,fmt, ...) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt, __VA_ARGS__)
 #else
 # define ENTER(s) 
 # define IF_DEBUG(flg) if (0)
 # define DEBUG0(flg,fmt)
-# define DEBUG1(flg,fmt,a1)
-# define DEBUG2(flg,fmt,a1,a2)
-# define DEBUG3(flg,fmt,a1,a2,a3)
-# define DEBUG4(flg,fmt,a1,a2,a3,a4)
-# define DEBUG5(flg,fmt,a1,a2,a3,a4,a5)
-# define DEBUG6(flg,fmt,a1,a2,a3,a4,a5,a6)
+# define DEBUG(flg,fmt, ...)
 #endif
 
 #ifdef ACCEL_TIMING
