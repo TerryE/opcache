@@ -74,13 +74,11 @@ void zend_accel_error(int type, const char *format, ...);
 # define ENTER(s) int dummy_to_be_ignored = accel_directives_debug_audit ? accel_debug_enter(#s) : 0;
   extern int ACCEL_debug_enter(char *s); 
 # define IF_DEBUG(flg) if (accel_directives_debug_flags & ACCEL_DBG_ ## flg)
-# define DEBUG0(flg,fmt) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt)
-# define DEBUG(flg,fmt, ...) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " fmt, __VA_ARGS__)
+# define DEBUG(flg, ...) IF_DEBUG(flg) zend_accel_error(ACCEL_LOG_DEBUG,#flg ": " __VA_ARGS__)
 #else
 # define ENTER(s) 
 # define IF_DEBUG(flg) if (0)
-# define DEBUG0(flg,fmt)
-# define DEBUG(flg,fmt, ...)
+# define DEBUG(flg, ...)
 #endif
 
 #ifdef ACCEL_TIMING
