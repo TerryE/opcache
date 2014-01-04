@@ -478,7 +478,7 @@ static void zend_hash_clone_methods(HashTable *ht, HashTable *source, zend_class
 			if (accel_xlat_get(new_entry->scope, new_ce) == SUCCESS) {
 				new_entry->scope = *new_ce;
 			} else {
-				zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME " class loading error, class %s, function %s. Please call Zend Support", ce->name, new_entry->function_name);
+				zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME " class loading error, class %s, function %s", ce->name, new_entry->function_name);
 			}
 		}
 
@@ -487,7 +487,7 @@ static void zend_hash_clone_methods(HashTable *ht, HashTable *source, zend_class
 			if (accel_xlat_get(new_entry->prototype, new_prototype) == SUCCESS) {
 				new_entry->prototype = *new_prototype;
 			} else {
-				zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME " class loading error, class %s, function %s. Please call Zend Support", ce->name, new_entry->function_name);
+				zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME " class loading error, class %s, function %s", ce->name, new_entry->function_name);
 			}
 		}
 
@@ -589,7 +589,7 @@ static void zend_hash_clone_prop_info(HashTable *ht, HashTable *source, zend_cla
 		} else if (accel_xlat_get(prop_info->ce, new_ce) == SUCCESS) {
 			prop_info->ce = *new_ce;
 		} else {
-			zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME" class loading error, class %s, property %s. Please call Zend Support", ce->name, prop_info->name);
+			zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME" class loading error, class %s, property %s", ce->name, prop_info->name);
 		}
 
 		p = p->pListNext;
@@ -621,7 +621,7 @@ static int zend_prepare_function_for_execution(zend_op_array *op_array)
 		if (accel_xlat_get(ce->handler, new_func) == SUCCESS) { \
 			ce->handler = *new_func; \
 		} else { \
-			zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME " class loading error, class %s. Please call Zend Support", ce->name); \
+			zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME " class loading error, class %s", ce->name); \
 		} \
 	} \
 }
@@ -710,7 +710,7 @@ static void zend_class_copy_ctor(zend_class_entry **pce)
 		if (accel_xlat_get(ce->parent, new_ce) == SUCCESS) {
 			ce->parent = *new_ce;
 		} else {
-			zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME" class loading error, class %s. Please call Zend Support", ce->name);
+			zend_error(E_ERROR, ACCELERATOR_PRODUCT_NAME" class loading error, class %s", ce->name);
 		}
 	}
 
@@ -835,7 +835,19 @@ static int zend_hash_unique_copy(HashTable *target, HashTable *source, unique_co
 				}
 			} else {
 				if (p->nKeyLength > 0 && p->arKey[0] == 0) {
-					/* Mangled key, ignore and wait for runtime */
+					/* Mangled key */
+#if ZEND_EXTENSION_API_NO >= PHP_5_3_X_API_NO
+					if (((zend_function*)p->pData)->common.fn_flags & ZEND_ACC_CLOSURE) {
+						/* update closure */
+						if (zend_hash_quick_update(target, p->arKey, p->nKeyLength, p->h, p->pData, size, &t) == SUCCESS) {
+							if (pCopyConstructor) {
+								pCopyConstructor(t);
+							}
+						}
+					} else {
+						/* ignore and wait for runtime */
+					} 
+#endif
 				} else if (!ignore_dups && zend_hash_quick_find(target, p->arKey, p->nKeyLength, p->h, &t) == SUCCESS) {
 					*fail_data = p->pData;
 					*conflict_data = t;
