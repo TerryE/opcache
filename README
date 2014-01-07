@@ -213,6 +213,12 @@ opcache.restrict_api (default "")
 	Allows calling OPcache API functions only from PHP scripts which path is
 	started from specified string. The default "" means no restriction.
 
+opcache.api_password (default "")
+	Allows calling OPcache API functions only from PHP scripts which first
+	enable the API by calling opcache_enable_api("password"). This parameter
+    is set to the MD5 of the required password.  Note that if the 
+    opcache.restrict_api is also set then both tests are applied. 
+
 opcache.mmap_base
 	Mapping base of shared memory segments (for Windows only). All the PHP
 	processes have to map shared memory into the same address space. This

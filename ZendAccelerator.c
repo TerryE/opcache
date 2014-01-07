@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2013 The PHP Group                                |
+   | Copyright (c) 1998-2014 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -36,7 +36,11 @@
 #include "main/php_open_temporary_file.h"
 #include "zend_API.h"
 #include "zend_ini.h"
+#if ZEND_EXTENSION_API_NO >= PHP_5_5_X_API_NO
+#include "zend_virtual_cwd.h"
+#else
 #include "TSRM/tsrm_virtual_cwd.h"
+#endif
 #include "zend_accelerator_util_funcs.h"
 #include "zend_accelerator_hash.h"
 
@@ -249,6 +253,9 @@ static ZEND_INI_MH(accel_include_path_on_modify)
 /* Interned strings support */
 static char *orig_interned_strings_start;
 static char *orig_interned_strings_end;
+# if ZEND_EXTENSION_API_NO > PHP_5_5_X_API_NO && !defined(ZTS)
+static char *orig_interned_empty_string;
+# endif
 static const char *(*orig_new_interned_string)(const char *str, int len, int free_src TSRMLS_DC);
 static void (*orig_interned_strings_snapshot)(TSRMLS_D);
 static void (*orig_interned_strings_restore)(TSRMLS_D);
@@ -387,6 +394,10 @@ static void accel_use_shm_interned_strings(TSRMLS_D)
 {
 	Bucket *p, *q;
 
+	/* empty string */
+# if ZEND_EXTENSION_API_NO > PHP_5_5_X_API_NO
+	CG(interned_empty_string) = accel_new_interned_string("", sizeof(""), 0 TSRMLS_CC);
+# endif
 	/* function table hash keys */
 	p = CG(function_table)->pListHead;
 	while (p) {
@@ -1127,6 +1138,10 @@ static zend_persistent_script *cache_script_in_shared_memory(zend_persistent_scr
 
 	/* Check if script may be stored in shared memory */
 	if (!zend_accel_script_persistable(new_persistent_script)) {
+		return new_persistent_script;
+	}
+
+	if (!zend_accel_script_optimize(new_persistent_script TSRMLS_CC)) {
 		return new_persistent_script;
 	}
 
@@ -2469,6 +2484,7 @@ static int zend_accel_init_shm(TSRMLS_D)
 
 	CG(interned_strings_start) = ZCSG(interned_strings_start);
 	CG(interned_strings_end) = ZCSG(interned_strings_end);
+	
 	zend_new_interned_string = accel_new_interned_string_for_php;
 	zend_interned_strings_snapshot = accel_interned_strings_snapshot_for_php;
 	zend_interned_strings_restore = accel_interned_strings_restore_for_php;
@@ -2476,6 +2492,10 @@ static int zend_accel_init_shm(TSRMLS_D)
 # ifndef ZTS
 	accel_use_shm_interned_strings(TSRMLS_C);
 	accel_interned_strings_save_state(TSRMLS_C);
+#  if ZEND_EXTENSION_API_NO > PHP_5_5_X_API_NO
+	orig_interned_empty_string = CG(interned_empty_string);
+    CG(interned_empty_string) = accel_new_interned_string("", sizeof(""), 0 TSRMLS_CC);
+#  endif
 # endif
 
 #endif
@@ -2713,6 +2733,9 @@ void accel_shutdown(TSRMLS_D)
 	zend_hash_clean(CG(function_table));
 	zend_hash_clean(CG(class_table));
 	zend_hash_clean(EG(zend_constants));
+#  if ZEND_EXTENSION_API_NO > PHP_5_5_X_API_NO
+	CG(interned_empty_string) = orig_interned_empty_string;
+#  endif
 # endif
 	CG(interned_strings_start) = orig_interned_strings_start;
 	CG(interned_strings_end) = orig_interned_strings_end;
@@ -2785,31 +2808,18 @@ void accelerator_shm_read_unlock(TSRMLS_D)
 	}
 }
 
-static void accel_op_array_handler(zend_op_array *op_array)
-{
-	TSRMLS_FETCH();
-
-	if (ZCG(enabled) &&
-	    accel_startup_ok &&
-	    ZCSG(accelerator_enabled) &&
-	    !ZSMMG(memory_exhausted) &&
-	    !ZCSG(restart_pending)) {
-		zend_optimizer(op_array TSRMLS_CC);
-	}
-}
-
 ZEND_EXT_API zend_extension zend_extension_entry = {
 	ACCELERATOR_PRODUCT_NAME,               /* name */
 	ACCELERATOR_VERSION,					/* version */
 	"Zend Technologies",					/* author */
 	"http://www.zend.com/",					/* URL */
-	"Copyright (c) 1999-2013",				/* copyright */
+	"Copyright (c) 1999-2014",				/* copyright */
 	accel_startup,					   		/* startup */
 	NULL,									/* shutdown */
 	accel_activate,							/* per-script activation */
 	accel_deactivate,						/* per-script deactivation */
 	NULL,									/* message handler */
-	accel_op_array_handler,					/* op_array handler */
+	NULL,									/* op_array handler */
 	NULL,									/* extended statement handler */
 	NULL,									/* extended fcall begin handler */
 	NULL,									/* extended fcall end handler */
