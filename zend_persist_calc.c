@@ -32,14 +32,15 @@
 #define RETURN_SIZE()      return memory_used
 
 #if ZEND_EXTENSION_API_NO > PHP_5_3_X_API_NO
-# define ADD_INTERNED_STRING(str, len) do { \
-		const char *tmp = accel_new_interned_string((str), (len), !IS_INTERNED((str)) TSRMLS_CC); \
+# define ADD_INTERNED_STRING(str, len) \
+	if(!IS_INTERNED(str)) { \
+		const char *tmp = accel_new_interned_string((str), (len), 1 TSRMLS_CC); \
 		if (tmp != (str)) { \
 			(str) = (char*)tmp; \
 		} else { \
 			ADD_DUP_SIZE((str), (len)); \
 		} \
-	} while (0)
+	}
 #else
 # define ADD_INTERNED_STRING(str, len) ADD_DUP_SIZE((str), (len))
 #endif
